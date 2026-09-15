@@ -1,0 +1,1950 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Администратор — InTrAvia Dispatch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* ============================================================
+           InTrAvia Dispatch — Admin Dashboard
+           ============================================================
+
+           Все данные о пилотах, инженерах, диспетчерах и транспорте
+           тянутся из базы данных через API. Локальных fallback-списков
+           больше нет.
+
+           Что сгенерировано нейросетью:
+             - базовая HTML-структура;
+             - типовые CSS-блоки;
+             - каркас CRUD-функций.
+
+           Что доработано вручную:
+             - дизайн-система InTrAvia;
+             - таблица пилотов без колонки «Борт»;
+             - звание хранится и отображается на русском (КВС/Пилот/Второй пилот);
+             - все данные тянутся из БД через API, без локальных фолбэков.
+           ============================================================ */
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --aero-blue: #003366;
+            --aero-blue-dark: #001f4d;
+            --aero-blue-light: #0055aa;
+            --aero-blue-pale: #e8f0fe;
+            --aero-gold: #c9a84c;
+            --aero-gold-light: #e0c974;
+            --aero-red: #dc2626;
+            --aero-green: #16a34a;
+            --aero-orange: #f59e0b;
+            --aero-purple: #7c3aed;
+            --aero-text: #1a2332;
+            --aero-text-light: #4a5a6a;
+            --aero-gray: #8a9bb5;
+            --aero-gray-light: #e8ecf0;
+            --aero-bg: #f0f2f5;
+            --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.04);
+            --shadow-card: 0 4px 20px rgba(0, 51, 102, 0.08);
+            --transition: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--aero-bg);
+            color: var(--aero-text);
+            display: flex;
+            min-height: 100vh;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--aero-gray); border-radius: 4px; }
+
+        /* ============================================================
+           Сайдбар
+           ============================================================ */
+        .sidebar {
+            width: 260px;
+            background: linear-gradient(180deg, #0a1628 0%, #001f4d 100%);
+            padding: 20px 16px;
+            height: 100vh;
+            overflow-y: auto;
+            flex-shrink: 0;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+            z-index: 1;
+        }
+
+        .sidebar-brand .brand-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--aero-blue-light) 0%, #0066cc 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow:
+                0 6px 20px rgba(0, 102, 204, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .sidebar-brand .brand-icon::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.4) 50%, transparent 70%);
+            animation: iconShine 5s ease-in-out infinite;
+        }
+
+        @keyframes iconShine {
+            0%, 100% { transform: translateX(-100%) translateY(-100%); }
+            50%      { transform: translateX(100%)  translateY(100%); }
+        }
+
+        .sidebar-brand .brand-text {
+            font-size: 17px;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: -0.3px;
+            line-height: 1;
+        }
+
+        .sidebar-brand .brand-text .brand-in { color: #8899aa; font-weight: 300; }
+        .sidebar-brand .brand-text .brand-tr {
+            background: linear-gradient(135deg, #4d9fff 0%, #0066cc 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .sidebar-brand .brand-text .brand-avia {
+            background: linear-gradient(135deg, var(--aero-gold) 0%, var(--aero-gold-light) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .sidebar-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 14px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .sidebar-user .avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(201, 168, 76, 0.2) 0%, rgba(224, 201, 116, 0.3) 100%);
+            border: 2px solid rgba(201, 168, 76, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .sidebar-user .user-info { flex: 1; min-width: 0; }
+        .sidebar-user .user-info .name {
+            font-size: 13px; font-weight: 600; color: #ffffff;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .sidebar-user .user-info .role { font-size: 11px; color: #8899aa; margin-top: 2px; }
+
+        .sidebar-nav { list-style: none; flex: 1; position: relative; z-index: 1; }
+        .sidebar-nav li { margin-bottom: 4px; }
+        .sidebar-nav li a {
+            display: flex; align-items: center; gap: 12px;
+            padding: 11px 14px; border-radius: 10px;
+            color: #8899aa; text-decoration: none;
+            font-size: 13px; font-weight: 500;
+            transition: all var(--transition);
+            cursor: pointer;
+        }
+        .sidebar-nav li a:hover { background: rgba(255, 255, 255, 0.06); color: #ffffff; }
+        .sidebar-nav li.active a {
+            background: linear-gradient(90deg, rgba(77, 159, 255, 0.15) 0%, rgba(77, 159, 255, 0.05) 100%);
+            color: #ffffff;
+            font-weight: 600;
+            position: relative;
+        }
+        .sidebar-nav li.active a::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 50%;
+            transform: translateY(-50%);
+            width: 3px; height: 20px;
+            background: var(--aero-gold);
+            border-radius: 0 2px 2px 0;
+        }
+        .sidebar-nav li a i { width: 20px; font-size: 15px; text-align: center; }
+
+        .sidebar-footer {
+            margin-top: auto; padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative; z-index: 1;
+        }
+
+        .btn-logout {
+            width: 100%; padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #8899aa;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            font-size: 13px; font-weight: 500; cursor: pointer;
+            transition: all var(--transition);
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            font-family: inherit;
+        }
+        .btn-logout:hover {
+            background: rgba(220, 38, 38, 0.15);
+            color: #fca5a5;
+            border-color: rgba(220, 38, 38, 0.3);
+        }
+
+        /* ============================================================
+           Основная область
+           ============================================================ */
+        .main {
+            flex: 1;
+            padding: 24px 32px 32px;
+            overflow-y: auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .page-header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--aero-text);
+            letter-spacing: -0.3px;
+        }
+
+        .page-header .date {
+            font-size: 13px;
+            color: var(--aero-gray);
+        }
+
+        /* ============================================================
+           Статистика
+           ============================================================ */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            flex-shrink: 0;
+        }
+
+        .stat-card {
+            background: #ffffff;
+            padding: 18px 22px;
+            border-radius: 14px;
+            border: 1px solid var(--aero-gray-light);
+            box-shadow: var(--shadow-soft);
+            transition: all var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-card);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 4px; height: 100%;
+            background: var(--aero-blue);
+        }
+
+        .stat-card .stat-value {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--aero-text);
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+
+        .stat-card .stat-label {
+            font-size: 12px;
+            color: var(--aero-gray);
+            margin-top: 8px;
+            font-weight: 500;
+        }
+
+        .stat-card .stat-value.blue { color: var(--aero-blue); }
+        .stat-card .stat-value.green { color: var(--aero-green); }
+        .stat-card .stat-value.orange { color: var(--aero-orange); }
+        .stat-card .stat-value.red { color: var(--aero-red); }
+
+        .stat-card:has(.stat-value.green)::before { background: var(--aero-green); }
+        .stat-card:has(.stat-value.orange)::before { background: var(--aero-orange); }
+        .stat-card:has(.stat-value.red)::before { background: var(--aero-red); }
+
+        /* ============================================================
+           Карточки
+           ============================================================ */
+        .card {
+            background: #ffffff;
+            border-radius: 14px;
+            padding: 20px 24px;
+            border: 1px solid var(--aero-gray-light);
+            box-shadow: var(--shadow-soft);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .card-header h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--aero-text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-header h3::before {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 16px;
+            background: linear-gradient(180deg, var(--aero-blue), var(--aero-gold));
+            border-radius: 2px;
+        }
+
+        .card-header .badge-count {
+            background: var(--aero-blue-pale);
+            color: var(--aero-blue);
+            padding: 3px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        /* ============================================================
+           Таблицы
+           ============================================================ */
+        .table-wrapper {
+            overflow-x: auto;
+            border-radius: 10px;
+            border: 1px solid var(--aero-gray-light);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead {
+            background: linear-gradient(135deg, #f8fafc 0%, #f0f4f8 100%);
+            border-bottom: 2px solid var(--aero-gray-light);
+        }
+
+        thead th {
+            text-align: left;
+            padding: 12px 14px;
+            font-weight: 700;
+            color: var(--aero-text-light);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        tbody td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--aero-gray-light);
+            color: var(--aero-text);
+            font-size: 13px;
+            vertical-align: middle;
+        }
+
+        tbody tr { transition: background var(--transition); }
+        tbody tr:hover { background: linear-gradient(90deg, var(--aero-blue-pale) 0%, transparent 100%); }
+        tbody tr:last-child td { border-bottom: none; }
+
+        /* ============================================================
+           Бейджи статусов
+           ============================================================ */
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-block;
+            white-space: nowrap;
+        }
+
+        .status-badge.free { background: #dcfce7; color: #15803d; }
+        .status-badge.busy { background: #fef3c7; color: #b45309; }
+        .status-badge.onway { background: #dbeafe; color: #1d4ed8; }
+        .status-badge.assigned { background: #fef3c7; color: #b45309; }
+
+        /* ============================================================
+           Кнопки
+           ============================================================ */
+        .btn-sm {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition);
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-sm.btn-primary {
+            background: linear-gradient(135deg, var(--aero-blue) 0%, var(--aero-blue-light) 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(0, 51, 102, 0.2);
+        }
+        .btn-sm.btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 51, 102, 0.3);
+        }
+
+        .btn-sm.btn-danger {
+            background: linear-gradient(135deg, var(--aero-red) 0%, #b91c1c 100%);
+            color: white;
+        }
+        .btn-sm.btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+        }
+
+        .btn-sm.btn-secondary {
+            background: var(--aero-gray-light);
+            color: var(--aero-text-light);
+        }
+        .btn-sm.btn-secondary:hover { background: #d0d7e2; }
+
+        .btn-sm.btn-success {
+            background: linear-gradient(135deg, var(--aero-green) 0%, #15803d 100%);
+            color: white;
+        }
+        .btn-sm.btn-success:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+        }
+
+        /* ============================================================
+           Пустое состояние
+           ============================================================ */
+        .empty-state {
+            text-align: center;
+            padding: 32px 16px;
+            color: var(--aero-gray);
+        }
+
+        .empty-state i {
+            font-size: 40px;
+            opacity: 0.3;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p { font-size: 14px; font-weight: 500; }
+
+        /* ============================================================
+           Toast
+           ============================================================ */
+        .toast {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #0a1628 0%, #001f4d 100%);
+            color: #ffffff;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+            z-index: 9999;
+            animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            font-family: inherit;
+            max-width: 380px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toast.success { border-left: 4px solid var(--aero-green); }
+        .toast.error { border-left: 4px solid var(--aero-red); }
+        .toast.warning { border-left: 4px solid var(--aero-orange); }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(60px) scale(0.9); }
+            to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+
+        /* ============================================================
+           Модалка
+           ============================================================ */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(6px);
+            z-index: 20000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.show { display: flex; }
+
+        .modal {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 28px 32px;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+            animation: modalIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .modal::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg,
+                var(--aero-blue) 0%,
+                #4d9fff 30%,
+                var(--aero-gold) 70%,
+                var(--aero-blue) 100%);
+            background-size: 200% 100%;
+            animation: goldShimmer 6s linear infinite;
+        }
+
+        @keyframes goldShimmer {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
+        }
+
+        @keyframes modalIn {
+            from { transform: scale(0.92) translateY(-20px); opacity: 0; }
+            to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--aero-gray-light);
+        }
+
+        .modal-header h2 {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--aero-text);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--aero-gray);
+            transition: all var(--transition);
+            line-height: 1;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover { background: var(--aero-gray-light); color: var(--aero-text); }
+
+        .modal .form-group { margin-bottom: 14px; }
+
+        .modal .form-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--aero-text-light);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .modal .form-group input,
+        .modal .form-group select {
+            width: 100%;
+            padding: 11px 14px;
+            border: 2px solid var(--aero-gray-light);
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            background: #fafbfc;
+            color: var(--aero-text);
+            transition: all var(--transition);
+            font-weight: 500;
+        }
+
+        .modal .form-group input:focus,
+        .modal .form-group select:focus {
+            outline: none;
+            border-color: var(--aero-blue);
+            background: #ffffff;
+            box-shadow: 0 0 0 4px rgba(0, 51, 102, 0.08);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--aero-gray-light);
+        }
+
+        .modal-actions .btn {
+            flex: 1;
+            padding: 11px 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all var(--transition);
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .modal-actions .btn-primary {
+            background: linear-gradient(135deg, var(--aero-blue) 0%, var(--aero-blue-light) 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(0, 51, 102, 0.25);
+        }
+        .modal-actions .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0, 51, 102, 0.35);
+        }
+
+        .modal-actions .btn-danger {
+            background: linear-gradient(135deg, var(--aero-red) 0%, #b91c1c 100%);
+            color: white;
+        }
+        .modal-actions .btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(220, 38, 38, 0.3);
+        }
+
+        .modal-actions .btn-secondary {
+            background: var(--aero-gray-light);
+            color: var(--aero-text-light);
+        }
+        .modal-actions .btn-secondary:hover { background: #d0d7e2; }
+
+        /* ============================================================
+           Адаптив
+           ============================================================ */
+        @media (max-width: 1024px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar { width: 68px; padding: 16px 12px; }
+            .sidebar-brand .brand-text,
+            .sidebar-user .user-info,
+            .sidebar-nav li a span,
+            .sidebar-footer .btn-logout span { display: none; }
+            .sidebar-nav li a { justify-content: center; padding: 12px; }
+            .sidebar-nav li a i { margin: 0; font-size: 18px; }
+            .sidebar-user { justify-content: center; }
+            .sidebar-footer .btn-logout { padding: 12px; }
+            .main { padding: 18px; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .page-header h1 { font-size: 20px; }
+        }
+
+        @media (max-width: 480px) {
+            .sidebar { display: none; }
+            .main { padding: 12px; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .page-header h1 { font-size: 18px; }
+            .card { padding: 16px; }
+            thead th, tbody td { padding: 8px 10px; font-size: 12px; }
+            .modal { padding: 22px 20px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== САЙДБАР ===== -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon">✈</div>
+            <div class="brand-text">
+                <span class="brand-in">In</span><span class="brand-tr">Tr</span><span class="brand-avia">Avia</span>
+            </div>
+        </div>
+
+        <div class="sidebar-user">
+            <div class="avatar" id="userAvatar">👨‍💼</div>
+            <div class="user-info">
+                <div class="name" id="userName">Администратор</div>
+                <div class="role" id="userRole">Администратор системы</div>
+            </div>
+        </div>
+
+        <ul class="sidebar-nav">
+            <li class="active"><a href="#"><i class="fas fa-chart-pie"></i><span>Обзор</span></a></li>
+        </ul>
+
+        <div class="sidebar-footer">
+            <button class="btn-logout" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Выйти</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- ===== ОСНОВНАЯ ОБЛАСТЬ ===== -->
+    <div class="main">
+
+        <div class="page-header">
+            <h1>Обзор системы</h1>
+            <span class="date" id="currentDate"></span>
+        </div>
+
+        <!-- Статистика -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value blue" id="totalEngineers">0</div>
+                <div class="stat-label">Всего инженеров</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value green" id="freeEngineers">0</div>
+                <div class="stat-label">Свободны</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value orange" id="busyEngineers">0</div>
+                <div class="stat-label">В работе</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value blue" id="totalTickets">0</div>
+                <div class="stat-label">Всего заявок</div>
+            </div>
+        </div>
+
+        <!-- Инженеры -->
+        <div class="card" id="engineersCard">
+            <div class="card-header">
+                <h3>Инженерно-технический персонал</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="badge-count" id="engineerCount">0</span>
+                    <button class="btn-sm btn-primary" onclick="openAddEngineerModal()"><i class="fas fa-plus"></i> Добавить</button>
+                    <button class="btn-sm btn-secondary" onclick="refreshData()"><i class="fas fa-sync"></i></button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Имя</th>
+                            <th>Специализация</th>
+                            <th>Статус</th>
+                            <th>Задача</th>
+                            <th style="text-align:center;">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="engineersTableBody">
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                <i class="fas fa-users"></i>
+                                <p>Нет данных</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Диспетчеры -->
+        <div class="card" id="dispatchersCard">
+            <div class="card-header">
+                <h3>Диспетчеры</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="badge-count" id="dispatcherCount">0</span>
+                    <button class="btn-sm btn-primary" onclick="openAddDispatcherModal()"><i class="fas fa-plus"></i> Добавить</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Имя</th>
+                            <th>Статус</th>
+                            <th>Смена</th>
+                            <th>Телефон</th>
+                            <th style="text-align:center;">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dispatchersTableBody">
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                <i class="fas fa-user-tie"></i>
+                                <p>Нет данных</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Пилоты — БЕЗ КОЛОНКИ «БОРТ» -->
+        <div class="card" id="pilotsCard">
+            <div class="card-header">
+                <h3>Пилоты</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="badge-count" id="pilotCount">0</span>
+                    <button class="btn-sm btn-primary" onclick="openAddPilotModal()"><i class="fas fa-plus"></i> Добавить</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Имя</th>
+                            <th>Звание</th>
+                            <th>Телефон</th>
+                            <th>Статус</th>
+                            <th style="text-align:center;">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pilotsTableBody">
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                <i class="fas fa-user-astronaut"></i>
+                                <p>Нет данных</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Транспорт -->
+        <div class="card" id="transportCard">
+            <div class="card-header">
+                <h3>Транспорт</h3>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="badge-count" id="transportCount">0</span>
+                    <button class="btn-sm btn-primary" onclick="openAddTransportModal()"><i class="fas fa-plus"></i> Добавить</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Устройство</th>
+                            <th>Скорость</th>
+                            <th>Статус</th>
+                            <th style="text-align:center;">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transportTableBody">
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                <i class="fas fa-truck"></i>
+                                <p>Нет данных</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Модалка -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">Редактирование</h2>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        /* ============================================================
+           InTrAvia Dispatch — Admin Dashboard Script
+           ============================================================
+           Все данные о пилотах, инженерах, диспетчерах и транспорте
+           тянутся из базы через API. Локальных fallback-списков нет.
+           Звание пилота хранится и выводится на русском.
+           ============================================================ */
+
+        var API_URL = '/api';
+
+        var STATUS_LABELS = {
+            'free': 'Свободен',
+            'busy': 'В работе',
+            'onway': 'В пути',
+            'arriving': 'Прибывает'
+        };
+
+        var STATUS_CLASSES = {
+            'free': 'free',
+            'busy': 'busy',
+            'onway': 'onway',
+            'arriving': 'onway'
+        };
+
+        var SKILL_MAP = {
+            'engine': 'Двигатели',
+            'avionics': 'Авионика',
+            'hydraulics': 'Гидравлика',
+            'electrical': 'Электрика',
+            'mechanical': 'Механика',
+            'general': 'Общая'
+        };
+
+        var DISPATCHER_STATUSES = {
+            'online': 'Онлайн',
+            'offline': 'Офлайн',
+            'busy': 'Занят'
+        };
+
+        var PILOT_STATUSES = {
+            'active': 'Активен',
+            'inactive': 'Неактивен'
+        };
+
+        /* Возможные звания пилота — на русском */
+        var PILOT_RANKS = [
+            'КВС',
+            'Пилот',
+            'Второй пилот'
+        ];
+
+        var editType = null;
+        var editId = null;
+        var loadInterval = null;
+
+        /* ============================================================
+           Инициализация
+           ============================================================ */
+        function init() {
+            var session = sessionStorage.getItem('userSession');
+            if (!session) { window.location.href = '/login.html'; return; }
+
+            var user;
+            try {
+                user = JSON.parse(session);
+                if (user.role !== 'admin') { window.location.href = '/login.html'; return; }
+                document.getElementById('userName').textContent = user.name || 'Администратор';
+                document.getElementById('userAvatar').textContent = user.avatar || '👨‍💼';
+                document.getElementById('userRole').textContent = 'Администратор системы';
+            } catch (_) { window.location.href = '/login.html'; return; }
+
+            var now = new Date();
+            var months = ['января','февраля','марта','апреля','мая','июня',
+                'июля','августа','сентября','октября','ноября','декабря'];
+            document.getElementById('currentDate').textContent =
+                now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+
+            loadData();
+            updateUI();
+
+            if (loadInterval) clearInterval(loadInterval);
+            loadInterval = setInterval(function() {
+                loadData();
+                updateUI();
+            }, 5000);
+        }
+
+        /* ============================================================
+           Загрузка данных из БД
+           ============================================================ */
+        function loadData() {
+            fetch(API_URL + '/engineers')
+                .then(function(res) { return res.json(); })
+                .then(function(data) { window.employees = Array.isArray(data) ? data : []; })
+                .catch(function(err) { console.error(err); window.employees = []; });
+
+            fetch(API_URL + '/users')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    window.dispatchers = Array.isArray(data)
+                        ? data.filter(function(u) { return u.role === 'dispatcher'; })
+                        : [];
+                })
+                .catch(function(err) { console.error(err); window.dispatchers = []; });
+
+            fetch(API_URL + '/requests')
+                .then(function(res) { return res.json(); })
+                .then(function(data) { window.tickets = Array.isArray(data) ? data : []; })
+                .catch(function(err) { console.error(err); window.tickets = []; });
+
+            fetch(API_URL + '/transport')
+                .then(function(res) { return res.json(); })
+                .then(function(data) { window.transport = Array.isArray(data) ? data : []; })
+                .catch(function(err) { console.error(err); window.transport = []; });
+
+            fetch(API_URL + '/pilots')
+                .then(function(res) { return res.json(); })
+                .then(function(data) { window.pilots = Array.isArray(data) ? data : []; })
+                .catch(function(err) { console.error(err); window.pilots = []; });
+        }
+
+        /* ============================================================
+           Обновление UI
+           ============================================================ */
+        function updateUI() {
+            renderEngineers();
+            renderDispatchers();
+            renderPilots();
+            renderTransport();
+            updateStats();
+        }
+
+        /* ============================================================
+           Инженеры
+           ============================================================ */
+        function renderEngineers() {
+            var tbody = document.getElementById('engineersTableBody');
+            var countEl = document.getElementById('engineerCount');
+
+            if (!window.employees || window.employees.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><i class="fas fa-users"></i><p>Нет инженеров</p></td></tr>';
+                countEl.textContent = '0';
+                return;
+            }
+
+            countEl.textContent = window.employees.length;
+
+            var html = '';
+            for (var i = 0; i < window.employees.length; i++) {
+                var e = window.employees[i];
+                var skill = SKILL_MAP[e.specialization] || e.specialization || '—';
+                var statusLabel = STATUS_LABELS[e.status] || e.status || '—';
+                var statusClass = STATUS_CLASSES[e.status] || 'free';
+                var task = e.task || '—';
+
+                html += '<tr>' +
+                    '<td><strong>' + escapeHtml(e.name) + '</strong></td>' +
+                    '<td>' + escapeHtml(skill) + '</td>' +
+                    '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(statusLabel) + '</span></td>' +
+                    '<td>' + escapeHtml(task) + '</td>' +
+                    '<td style="text-align:center;white-space:nowrap;">' +
+                    '<button class="btn-sm btn-secondary" onclick="openEditEngineer(\'' + e.id + '\')" title="Редактировать"><i class="fas fa-edit"></i></button> ' +
+                    '<button class="btn-sm btn-danger" onclick="deleteEmployee(\'' + e.id + '\')" title="Удалить"><i class="fas fa-trash"></i></button>' +
+                    '</td>' +
+                    '</tr>';
+            }
+            tbody.innerHTML = html;
+        }
+
+        /* ============================================================
+           Диспетчеры
+           ============================================================ */
+        function renderDispatchers() {
+            var tbody = document.getElementById('dispatchersTableBody');
+            var countEl = document.getElementById('dispatcherCount');
+
+            var dispatchers = window.dispatchers || [];
+
+            if (dispatchers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><i class="fas fa-user-tie"></i><p>Нет диспетчеров</p></td></tr>';
+                countEl.textContent = '0';
+                return;
+            }
+
+            countEl.textContent = dispatchers.length;
+
+            var html = '';
+            for (var i = 0; i < dispatchers.length; i++) {
+                var d = dispatchers[i];
+                var statusLabel = DISPATCHER_STATUSES[d.status] || d.status || '—';
+                var statusClass = d.status === 'online' ? 'free' : d.status === 'busy' ? 'busy' : 'onway';
+                var shift = d.shift === 'night' ? 'Ночная' : 'Дневная';
+                var phone = d.phone || '—';
+
+                html += '<tr>' +
+                    '<td><strong>' + escapeHtml(d.name) + '</strong></td>' +
+                    '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(statusLabel) + '</span></td>' +
+                    '<td>' + escapeHtml(shift) + '</td>' +
+                    '<td>' + escapeHtml(phone) + '</td>' +
+                    '<td style="text-align:center;white-space:nowrap;">' +
+                    '<button class="btn-sm btn-secondary" onclick="openEditDispatcher(\'' + d.id + '\')" title="Редактировать"><i class="fas fa-edit"></i></button> ' +
+                    '<button class="btn-sm btn-danger" onclick="deleteDispatcher(\'' + d.id + '\')" title="Удалить"><i class="fas fa-trash"></i></button>' +
+                    '</td>' +
+                    '</tr>';
+            }
+            tbody.innerHTML = html;
+        }
+
+        /* ============================================================
+           Пилоты — без колонки «Борт», звание на русском
+           ============================================================ */
+        function renderPilots() {
+            var tbody = document.getElementById('pilotsTableBody');
+            var countEl = document.getElementById('pilotCount');
+
+            if (!tbody || !countEl) return;
+
+            var pilots = window.pilots || [];
+
+            if (pilots.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><i class="fas fa-user-astronaut"></i><p>Нет пилотов</p></td></tr>';
+                countEl.textContent = '0';
+                return;
+            }
+
+            countEl.textContent = pilots.length;
+
+            var html = '';
+            for (var i = 0; i < pilots.length; i++) {
+                var p = pilots[i];
+                var statusClass = p.status === 'active' ? 'free' : 'busy';
+                var statusLabel = PILOT_STATUSES[p.status] || 'Активен';
+                /* rank приходит из БД уже на русском: КВС / Пилот / Второй пилот */
+                var rankLabel = p.rank || '—';
+
+                html += '<tr>' +
+                    '<td><strong>' + escapeHtml(p.name) + '</strong><br><span style="font-size:11px;color:#8a9bb5;">' + escapeHtml(p.email || '') + '</span></td>' +
+                    '<td>' + escapeHtml(rankLabel) + '</td>' +
+                    '<td>' + escapeHtml(p.phone || '—') + '</td>' +
+                    '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(statusLabel) + '</span></td>' +
+                    '<td style="text-align:center;white-space:nowrap;">' +
+                    '<button class="btn-sm btn-secondary" onclick="openEditPilot(\'' + p.id + '\')" title="Редактировать"><i class="fas fa-edit"></i></button> ' +
+                    '<button class="btn-sm btn-danger" onclick="deletePilot(\'' + p.id + '\')" title="Удалить"><i class="fas fa-trash"></i></button>' +
+                    '</td>' +
+                    '</tr>';
+            }
+            tbody.innerHTML = html;
+        }
+
+        /* ============================================================
+           Транспорт
+           ============================================================ */
+        function renderTransport() {
+            var tbody = document.getElementById('transportTableBody');
+            var countEl = document.getElementById('transportCount');
+
+            var transport = window.transport || [];
+
+            if (transport.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><i class="fas fa-truck"></i><p>Нет транспорта</p></td></tr>';
+                countEl.textContent = '0';
+                return;
+            }
+
+            countEl.textContent = transport.length;
+
+            var html = '';
+            for (var i = 0; i < transport.length; i++) {
+                var t = transport[i];
+                var statusClass = t.assigned_to ? 'assigned' : 'free';
+                var statusText = t.assigned_to ? 'Занят (' + t.assigned_to + ')' : 'Свободен';
+
+                html += '<tr>' +
+                    '<td>' + t.id + '</td>' +
+                    '<td><strong>' + escapeHtml(t.device_id) + '</strong></td>' +
+                    '<td>' + (t.speed || 50) + ' км/ч</td>' +
+                    '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(statusText) + '</span></td>' +
+                    '<td style="text-align:center;white-space:nowrap;">' +
+                    '<button class="btn-sm btn-secondary" onclick="openEditTransport(' + t.id + ')" title="Редактировать"><i class="fas fa-edit"></i></button> ' +
+                    '<button class="btn-sm btn-danger" onclick="deleteTransport(' + t.id + ')" title="Удалить"><i class="fas fa-trash"></i></button>' +
+                    '</td>' +
+                    '</tr>';
+            }
+            tbody.innerHTML = html;
+        }
+
+        /* ============================================================
+           Статистика
+           ============================================================ */
+        function updateStats() {
+            var total = window.employees ? window.employees.length : 0;
+            var free = 0;
+            var busy = 0;
+
+            if (window.employees) {
+                for (var i = 0; i < window.employees.length; i++) {
+                    if (window.employees[i].status === 'free') free++;
+                    else if (window.employees[i].status === 'busy' || window.employees[i].status === 'arriving') busy++;
+                }
+            }
+
+            document.getElementById('totalEngineers').textContent = total;
+            document.getElementById('freeEngineers').textContent = free;
+            document.getElementById('busyEngineers').textContent = busy;
+            document.getElementById('totalTickets').textContent = window.tickets ? window.tickets.length : 0;
+        }
+
+        function refreshData() {
+            loadData();
+            setTimeout(function() { updateUI(); }, 500);
+            showToast('Данные обновлены', 'success');
+        }
+
+        /* ============================================================
+           Инженеры — модалки
+           ============================================================ */
+        function openEditEngineer(id) {
+            var emp = null;
+            if (window.employees) {
+                for (var i = 0; i < window.employees.length; i++) {
+                    if (window.employees[i].id === id) { emp = window.employees[i]; break; }
+                }
+            }
+            if (!emp) { showToast('Инженер не найден', 'error'); return; }
+
+            editType = 'engineer';
+            editId = id;
+
+            document.getElementById('modalTitle').textContent = 'Редактирование инженера: ' + emp.name;
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>Имя</label>' +
+                '<input type="text" id="editName" value="' + escapeHtml(emp.name) + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Специализация</label>' +
+                '<select id="editSkill">' +
+                '<option value="engine" ' + (emp.specialization === 'engine' ? 'selected' : '') + '>Двигатели</option>' +
+                '<option value="avionics" ' + (emp.specialization === 'avionics' ? 'selected' : '') + '>Авионика</option>' +
+                '<option value="hydraulics" ' + (emp.specialization === 'hydraulics' ? 'selected' : '') + '>Гидравлика</option>' +
+                '<option value="electrical" ' + (emp.specialization === 'electrical' ? 'selected' : '') + '>Электрика</option>' +
+                '<option value="mechanical" ' + (emp.specialization === 'mechanical' ? 'selected' : '') + '>Механика</option>' +
+                '<option value="general" ' + (emp.specialization === 'general' ? 'selected' : '') + '>Общая</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Статус</label>' +
+                '<select id="editStatus">' +
+                '<option value="free" ' + (emp.status === 'free' ? 'selected' : '') + '>Свободен</option>' +
+                '<option value="busy" ' + (emp.status === 'busy' ? 'selected' : '') + '>В работе</option>' +
+                '<option value="onway" ' + (emp.status === 'onway' ? 'selected' : '') + '>В пути</option>' +
+                '<option value="arriving" ' + (emp.status === 'arriving' ? 'selected' : '') + '>Прибывает</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Задача</label>' +
+                '<input type="text" id="editTask" value="' + escapeHtml(emp.task || '') + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Телефон</label>' +
+                '<input type="text" id="editPhone" value="' + escapeHtml(emp.phone || '') + '">' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-danger" onclick="deleteFromModal()"><i class="fas fa-trash"></i> Удалить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function openAddEngineerModal() {
+            editType = 'engineer';
+            editId = null;
+
+            document.getElementById('modalTitle').textContent = 'Добавление инженера';
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>Имя</label>' +
+                '<input type="text" id="editName" placeholder="И.О. Фамилия">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Email</label>' +
+                '<input type="email" id="editEmail" placeholder="email@aeroflot.ru">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Специализация</label>' +
+                '<select id="editSkill">' +
+                '<option value="engine">Двигатели</option>' +
+                '<option value="avionics">Авионика</option>' +
+                '<option value="hydraulics">Гидравлика</option>' +
+                '<option value="electrical">Электрика</option>' +
+                '<option value="mechanical">Механика</option>' +
+                '<option value="general">Общая</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Статус</label>' +
+                '<select id="editStatus">' +
+                '<option value="free">Свободен</option>' +
+                '<option value="busy">В работе</option>' +
+                '<option value="onway">В пути</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Телефон</label>' +
+                '<input type="text" id="editPhone" placeholder="+7 (999) 111-22-33">' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function deleteEmployee(id) {
+            if (!confirm('Удалить инженера?')) return;
+            fetch(API_URL + '/engineers/' + id, { method: 'DELETE' })
+                .then(function(res) { return res.json(); })
+                .then(function() {
+                    showToast('Инженер удалён', 'success');
+                    loadData();
+                    setTimeout(function() { updateUI(); }, 500);
+                })
+                .catch(function() { showToast('Ошибка удаления', 'error'); });
+        }
+
+        /* ============================================================
+           Диспетчеры — модалки
+           ============================================================ */
+        function openEditDispatcher(id) {
+            var disp = null;
+            if (window.dispatchers) {
+                for (var i = 0; i < window.dispatchers.length; i++) {
+                    if (window.dispatchers[i].id === id) { disp = window.dispatchers[i]; break; }
+                }
+            }
+            if (!disp) { showToast('Диспетчер не найден', 'error'); return; }
+
+            editType = 'dispatcher';
+            editId = id;
+
+            document.getElementById('modalTitle').textContent = 'Редактирование диспетчера: ' + disp.name;
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>Имя</label>' +
+                '<input type="text" id="editName" value="' + escapeHtml(disp.name) + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Статус</label>' +
+                '<select id="editStatus">' +
+                '<option value="online" ' + (disp.status === 'online' ? 'selected' : '') + '>Онлайн</option>' +
+                '<option value="offline" ' + (disp.status === 'offline' ? 'selected' : '') + '>Офлайн</option>' +
+                '<option value="busy" ' + (disp.status === 'busy' ? 'selected' : '') + '>Занят</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Смена</label>' +
+                '<select id="editShift">' +
+                '<option value="day" ' + (disp.shift === 'day' ? 'selected' : '') + '>Дневная</option>' +
+                '<option value="night" ' + (disp.shift === 'night' ? 'selected' : '') + '>Ночная</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Телефон</label>' +
+                '<input type="text" id="editPhone" value="' + escapeHtml(disp.phone || '') + '">' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-danger" onclick="deleteFromModal()"><i class="fas fa-trash"></i> Удалить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function openAddDispatcherModal() {
+            editType = 'dispatcher';
+            editId = null;
+
+            document.getElementById('modalTitle').textContent = 'Добавление диспетчера';
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>Имя</label>' +
+                '<input type="text" id="editName" placeholder="И.О. Фамилия">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Email</label>' +
+                '<input type="email" id="editEmail" placeholder="email@aeroflot.ru">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Статус</label>' +
+                '<select id="editStatus">' +
+                '<option value="online">Онлайн</option>' +
+                '<option value="offline">Офлайн</option>' +
+                '<option value="busy">Занят</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Смена</label>' +
+                '<select id="editShift">' +
+                '<option value="day">Дневная</option>' +
+                '<option value="night">Ночная</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Телефон</label>' +
+                '<input type="text" id="editPhone" placeholder="+7 (999) 111-22-33">' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function deleteDispatcher(id) {
+            if (!confirm('Удалить диспетчера?')) return;
+            fetch(API_URL + '/users/' + id, { method: 'DELETE' })
+                .then(function(res) { return res.json(); })
+                .then(function() {
+                    showToast('Диспетчер удалён', 'success');
+                    loadData();
+                    setTimeout(function() { updateUI(); }, 500);
+                })
+                .catch(function() { showToast('Ошибка удаления', 'error'); });
+        }
+
+        /* ============================================================
+           Пилоты — модалки без поля «Борт», звание на русском
+           ============================================================ */
+        function openEditPilot(id) {
+            var p = null;
+            var pilots = window.pilots || [];
+            for (var i = 0; i < pilots.length; i++) {
+                if (pilots[i].id === id) { p = pilots[i]; break; }
+            }
+            if (!p) { showToast('Пилот не найден', 'error'); return; }
+
+            editType = 'pilot';
+            editId = id;
+
+            var rankOptions = '';
+            for (var r = 0; r < PILOT_RANKS.length; r++) {
+                rankOptions += '<option value="' + PILOT_RANKS[r] + '" ' +
+                    (p.rank === PILOT_RANKS[r] ? 'selected' : '') + '>' + PILOT_RANKS[r] + '</option>';
+            }
+
+            document.getElementById('modalTitle').textContent = 'Редактирование пилота: ' + p.name;
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>Имя</label>' +
+                '<input type="text" id="editName" value="' + escapeHtml(p.name) + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Email</label>' +
+                '<input type="email" id="editEmail" value="' + escapeHtml(p.email || '') + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Звание</label>' +
+                '<select id="editRank">' + rankOptions + '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Телефон</label>' +
+                '<input type="text" id="editPhone" value="' + escapeHtml(p.phone || '') + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Статус</label>' +
+                '<select id="editStatus">' +
+                '<option value="active" ' + (p.status === 'active' ? 'selected' : '') + '>Активен</option>' +
+                '<option value="inactive" ' + (p.status === 'inactive' ? 'selected' : '') + '>Неактивен</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-danger" onclick="deleteFromModal()"><i class="fas fa-trash"></i> Удалить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function openAddPilotModal() {
+            editType = 'pilot';
+            editId = null;
+
+            var rankOptions = '';
+            for (var r = 0; r < PILOT_RANKS.length; r++) {
+                rankOptions += '<option value="' + PILOT_RANKS[r] + '">' + PILOT_RANKS[r] + '</option>';
+            }
+
+            document.getElementById('modalTitle').textContent = 'Добавление пилота';
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>Имя</label>' +
+                '<input type="text" id="editName" placeholder="И.О. Фамилия">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Email</label>' +
+                '<input type="email" id="editEmail" placeholder="email@aeroflot.ru">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Пароль для входа</label>' +
+                '<input type="text" id="editPassword" placeholder="pilot123" value="pilot123">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Звание</label>' +
+                '<select id="editRank">' + rankOptions + '</select>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Телефон</label>' +
+                '<input type="text" id="editPhone" placeholder="+7 (999) 100-10-01">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Статус</label>' +
+                '<select id="editStatus">' +
+                '<option value="active">Активен</option>' +
+                '<option value="inactive">Неактивен</option>' +
+                '</select>' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function deletePilot(id) {
+            if (!confirm('Удалить пилота?')) return;
+            fetch(API_URL + '/pilots/' + id, { method: 'DELETE' })
+                .then(function(res) { return res.json(); })
+                .then(function() {
+                    showToast('Пилот удалён', 'success');
+                    loadData();
+                    setTimeout(function() { updateUI(); }, 500);
+                })
+                .catch(function() { showToast('Ошибка удаления', 'error'); });
+        }
+
+        /* ============================================================
+           Транспорт — модалки
+           ============================================================ */
+        function openEditTransport(id) {
+            var car = null;
+            if (window.transport) {
+                for (var i = 0; i < window.transport.length; i++) {
+                    if (window.transport[i].id === id) { car = window.transport[i]; break; }
+                }
+            }
+            if (!car) { showToast('Транспорт не найден', 'error'); return; }
+
+            editType = 'transport';
+            editId = id;
+
+            document.getElementById('modalTitle').textContent = 'Редактирование транспорта: ' + car.device_id;
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>ID устройства</label>' +
+                '<input type="text" id="editDeviceId" value="' + escapeHtml(car.device_id) + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Широта</label>' +
+                '<input type="number" id="editLat" step="0.0001" value="' + car.lat + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Долгота</label>' +
+                '<input type="number" id="editLng" step="0.0001" value="' + car.lng + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Скорость (км/ч)</label>' +
+                '<input type="number" id="editSpeed" value="' + (car.speed || 50) + '">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Назначен (ID инженера)</label>' +
+                '<input type="text" id="editAssignedTo" placeholder="eng_1" value="' + escapeHtml(car.assigned_to || '') + '">' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-danger" onclick="deleteFromModal()"><i class="fas fa-trash"></i> Удалить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function openAddTransportModal() {
+            editType = 'transport';
+            editId = null;
+
+            document.getElementById('modalTitle').textContent = 'Добавление транспорта';
+            document.getElementById('modalContent').innerHTML =
+                '<div class="form-group">' +
+                '<label>ID устройства *</label>' +
+                '<input type="text" id="editDeviceId" placeholder="CAR-006" required>' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Широта</label>' +
+                '<input type="number" id="editLat" step="0.0001" value="55.9750">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Долгота</label>' +
+                '<input type="number" id="editLng" step="0.0001" value="37.4100">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Скорость (км/ч)</label>' +
+                '<input type="number" id="editSpeed" value="50">' +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label>Назначен (ID инженера)</label>' +
+                '<input type="text" id="editAssignedTo" placeholder="eng_1" value="">' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                '<button class="btn btn-primary" onclick="saveEdit()"><i class="fas fa-save"></i> Сохранить</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Отмена</button>' +
+                '</div>';
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        function deleteTransport(id) {
+            if (!confirm('Удалить транспорт?')) return;
+            fetch(API_URL + '/transport/' + id, { method: 'DELETE' })
+                .then(function(res) { return res.json(); })
+                .then(function() {
+                    showToast('Транспорт удалён', 'success');
+                    loadData();
+                    setTimeout(function() { updateUI(); }, 500);
+                })
+                .catch(function() { showToast('Ошибка удаления', 'error'); });
+        }
+
+        /* ============================================================
+           Сохранение изменений
+           ============================================================ */
+        function saveEdit() {
+            /* Инженер */
+            if (editType === 'engineer') {
+                var name = document.getElementById('editName').value.trim();
+                var skill = document.getElementById('editSkill').value;
+                var status = document.getElementById('editStatus').value;
+                var task = document.getElementById('editTask') ? document.getElementById('editTask').value.trim() : '';
+                var phone = document.getElementById('editPhone') ? document.getElementById('editPhone').value.trim() : '';
+                var email = document.getElementById('editEmail') ? document.getElementById('editEmail').value.trim() : '';
+
+                if (!name) { showToast('Введите имя инженера', 'error'); return; }
+
+                var data = {
+                    name: name,
+                    specialization: skill,
+                    status: status,
+                    task: task || null,
+                    phone: phone || null
+                };
+
+                if (editId === null) {
+                    if (!email) { showToast('Введите email', 'error'); return; }
+                    data.email = email;
+                    fetch(API_URL + '/engineers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Инженер добавлен', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                } else {
+                    fetch(API_URL + '/engineers/' + editId, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Данные обновлены', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                }
+            }
+            /* Диспетчер */
+            else if (editType === 'dispatcher') {
+                var name = document.getElementById('editName').value.trim();
+                var status = document.getElementById('editStatus').value;
+                var shift = document.getElementById('editShift').value;
+                var phone = document.getElementById('editPhone') ? document.getElementById('editPhone').value.trim() : '';
+                var email = document.getElementById('editEmail') ? document.getElementById('editEmail').value.trim() : '';
+
+                if (!name) { showToast('Введите имя диспетчера', 'error'); return; }
+
+                var data = { name: name, status: status, shift: shift, phone: phone || null };
+
+                if (editId === null) {
+                    if (!email) { showToast('Введите email', 'error'); return; }
+                    data.email = email;
+                    data.role = 'dispatcher';
+                    data.password = 'disp123';
+                    fetch(API_URL + '/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Диспетчер добавлен', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                } else {
+                    fetch(API_URL + '/users/' + editId, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Данные обновлены', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                }
+            }
+            /* Пилот — без поля «Борт», звание на русском */
+            else if (editType === 'pilot') {
+                var name = document.getElementById('editName').value.trim();
+                var email = document.getElementById('editEmail') ? document.getElementById('editEmail').value.trim() : '';
+                var password = document.getElementById('editPassword') ? document.getElementById('editPassword').value.trim() : '';
+                var rank = document.getElementById('editRank').value; /* КВС / Пилот / Второй пилот */
+                var phone = document.getElementById('editPhone') ? document.getElementById('editPhone').value.trim() : '';
+                var status = document.getElementById('editStatus').value;
+
+                if (!name) { showToast('Введите имя пилота', 'error'); return; }
+
+                var data = {
+                    name: name,
+                    rank: rank,
+                    phone: phone || null,
+                    status: status
+                };
+
+                if (editId === null) {
+                    if (!email) { showToast('Введите email', 'error'); return; }
+                    data.email = email;
+                    data.role = 'pilot';
+                    data.password = password || 'pilot123';
+
+                    fetch(API_URL + '/pilots', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Пилот добавлен', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                } else {
+                    /* Если меняем email или пароль — тоже отправляем */
+                    if (email) data.email = email;
+                    if (password) data.password = password;
+
+                    fetch(API_URL + '/pilots/' + editId, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Данные обновлены', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                }
+            }
+            /* Транспорт */
+            else if (editType === 'transport') {
+                var deviceId = document.getElementById('editDeviceId').value.trim();
+                var lat = parseFloat(document.getElementById('editLat').value);
+                var lng = parseFloat(document.getElementById('editLng').value);
+                var speed = parseInt(document.getElementById('editSpeed').value) || 50;
+                var assignedTo = document.getElementById('editAssignedTo').value.trim() || null;
+
+                if (!deviceId) { showToast('Введите ID устройства', 'error'); return; }
+                if (isNaN(lat) || isNaN(lng)) { showToast('Введите корректные координаты', 'error'); return; }
+
+                var data = {
+                    device_id: deviceId,
+                    lat: lat,
+                    lng: lng,
+                    speed: speed,
+                    assigned_to: assignedTo
+                };
+
+                if (editId === null) {
+                    fetch(API_URL + '/transport', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Транспорт добавлен', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                } else {
+                    fetch(API_URL + '/transport/' + editId, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(result) {
+                        if (result.error) showToast(result.error, 'error');
+                        else { showToast('Данные обновлены', 'success'); loadData(); setTimeout(updateUI, 500); closeModal(); }
+                    })
+                    .catch(function() { showToast('Ошибка сохранения', 'error'); });
+                }
+            }
+        }
+
+        function deleteFromModal() {
+            if (editType === 'engineer' && editId !== null) deleteEmployee(editId);
+            else if (editType === 'dispatcher' && editId !== null) deleteDispatcher(editId);
+            else if (editType === 'pilot' && editId !== null) deletePilot(editId);
+            else if (editType === 'transport' && editId !== null) deleteTransport(editId);
+            closeModal();
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('show');
+            editType = null;
+            editId = null;
+        }
+
+        function showToast(message, type) {
+            type = type || 'info';
+            var existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 3000);
+        }
+
+        function escapeHtml(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function logout() {
+            if (loadInterval) clearInterval(loadInterval);
+            sessionStorage.removeItem('userSession');
+            window.location.href = '/login.html';
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+
+        window.openEditEngineer = openEditEngineer;
+        window.openEditDispatcher = openEditDispatcher;
+        window.openEditPilot = openEditPilot;
+        window.openEditTransport = openEditTransport;
+        window.openAddEngineerModal = openAddEngineerModal;
+        window.openAddDispatcherModal = openAddDispatcherModal;
+        window.openAddPilotModal = openAddPilotModal;
+        window.openAddTransportModal = openAddTransportModal;
+        window.closeModal = closeModal;
+        window.saveEdit = saveEdit;
+        window.deleteFromModal = deleteFromModal;
+        window.deleteEmployee = deleteEmployee;
+        window.deleteDispatcher = deleteDispatcher;
+        window.deletePilot = deletePilot;
+        window.deleteTransport = deleteTransport;
+        window.logout = logout;
+        window.showToast = showToast;
+        window.refreshData = refreshData;
+        window.loadData = loadData;
+        window.updateUI = updateUI;
+    </script>
+</body>
+</html>

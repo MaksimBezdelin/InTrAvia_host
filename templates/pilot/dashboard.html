@@ -1,0 +1,1948 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Пилот — InTrAvia Dispatch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!--
+    ============================================================
+    InTrAvia Dispatch — Кабинет пилота (frontend)
+    ============================================================
+    Файл собран командой InTrAvia вместе с нейросетью-ассистентом.
+
+    Что сгенерировано нейросетью:
+      - базовая вёрстка дашборда (sidebar, profile-bar, cards);
+      - CSS-переменные и «аэрофлотовская» палитра;
+      - каркас MediaRecorder: start/stop, ondataavailable,
+        визуализация через AnalyserNode;
+      - типовые тосты и модалки;
+      - заготовка истории записей в localStorage.
+
+    Что доработано вручную:
+      - обход ошибки «обрезанного Blob»: requestData() перед stop()
+        + setTimeout(250) в onstop, чтобы дождаться финального
+        ondataavailable (иначе в Blob попадал только первый кластер);
+      - фиксация длительности через loadedmetadata + fallback
+        на таймер (у webm из MediaRecorder duration = Infinity);
+      - корректный выбор микрофона с сохранением в localStorage;
+      - отдельная модалка-объяснялка для insecure context и
+        отсутствия getUserMedia / MediaRecorder;
+      - аккуратный resetRecording без утечки objectURL.
+
+    Каждый блок помечен по происхождению:
+      [AI]  — сгенерировано нейросетью;
+      [MAN] — доработано вручную;
+      [MIX] — смешанная работа.
+    ============================================================
+    -->
+    <style>
+        /* ====================================================
+           [AI] Базовый reset и CSS-переменные — нейросеть
+           ==================================================== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --aero-blue: #003366;
+            --aero-blue-dark: #001f4d;
+            --aero-blue-light: #0055aa;
+            --aero-blue-pale: #e8f0fe;
+            --aero-gold: #c9a84c;
+            --aero-gold-light: #e0c974;
+            --aero-red: #dc2626;
+            --aero-green: #16a34a;
+            --aero-orange: #f59e0b;
+            --aero-text: #1a2332;
+            --aero-text-light: #4a5a6a;
+            --aero-gray: #8a9bb5;
+            --aero-gray-light: #e8ecf0;
+            --aero-bg: #f0f2f5;
+            --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.04);
+            --shadow-card: 0 4px 20px rgba(0, 51, 102, 0.08);
+            --transition: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--aero-bg);
+            color: var(--aero-text);
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* ====================================================
+           [AI] Sidebar — типовой каркас от нейросети.
+           [MAN] Вручную добавлена сетка ::before и анимация
+                 iconShine на логотипе — «оживляет» бренд.
+           ==================================================== */
+        .sidebar {
+            width: 260px;
+            background: linear-gradient(180deg, #0a1628 0%, #001f4d 100%);
+            padding: 24px 20px;
+            min-height: 100vh;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+            z-index: 1;
+        }
+
+        .sidebar-brand .brand-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--aero-blue-light) 0%, #0066cc 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow:
+                0 6px 20px rgba(0, 102, 204, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .sidebar-brand .brand-icon::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg,
+                transparent 30%,
+                rgba(255, 255, 255, 0.4) 50%,
+                transparent 70%);
+            animation: iconShine 5s ease-in-out infinite;
+        }
+
+        @keyframes iconShine {
+            0%, 100% { transform: translateX(-100%) translateY(-100%); }
+            50%      { transform: translateX(100%)  translateY(100%); }
+        }
+
+        .sidebar-brand .brand-text {
+            font-size: 17px;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: -0.3px;
+            line-height: 1;
+        }
+
+        .sidebar-brand .brand-text .brand-in { color: #8899aa; font-weight: 300; }
+        .sidebar-brand .brand-text .brand-tr {
+            background: linear-gradient(135deg, #4d9fff 0%, #0066cc 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .sidebar-brand .brand-text .brand-avia {
+            background: linear-gradient(135deg, var(--aero-gold) 0%, var(--aero-gold-light) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .sidebar-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 14px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .sidebar-user .avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(201, 168, 76, 0.2) 0%, rgba(224, 201, 116, 0.3) 100%);
+            border: 2px solid rgba(201, 168, 76, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .sidebar-user .user-info { flex: 1; min-width: 0; }
+        .sidebar-user .user-info .name {
+            font-size: 13px; font-weight: 600; color: #ffffff;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .sidebar-user .user-info .role { font-size: 11px; color: #8899aa; margin-top: 2px; }
+
+        .sidebar-nav { list-style: none; flex: 1; position: relative; z-index: 1; }
+        .sidebar-nav li { margin-bottom: 4px; }
+        .sidebar-nav li a {
+            display: flex; align-items: center; gap: 12px;
+            padding: 11px 14px; border-radius: 10px;
+            color: #8899aa; text-decoration: none;
+            font-size: 13px; font-weight: 500;
+            transition: all var(--transition);
+            cursor: pointer;
+        }
+        .sidebar-nav li a:hover { background: rgba(255, 255, 255, 0.06); color: #ffffff; }
+        .sidebar-nav li.active a {
+            background: linear-gradient(90deg, rgba(77, 159, 255, 0.15) 0%, rgba(77, 159, 255, 0.05) 100%);
+            color: #ffffff;
+            font-weight: 600;
+            position: relative;
+        }
+        .sidebar-nav li.active a::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 50%;
+            transform: translateY(-50%);
+            width: 3px; height: 20px;
+            background: var(--aero-gold);
+            border-radius: 0 2px 2px 0;
+        }
+        .sidebar-nav li a i { width: 20px; font-size: 15px; text-align: center; }
+
+        .sidebar-footer {
+            margin-top: auto; padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative; z-index: 1;
+        }
+
+        .btn-logout {
+            width: 100%; padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #8899aa;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            font-size: 13px; font-weight: 500; cursor: pointer;
+            transition: all var(--transition);
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            font-family: inherit;
+        }
+        .btn-logout:hover {
+            background: rgba(220, 38, 38, 0.15);
+            color: #fca5a5;
+            border-color: rgba(220, 38, 38, 0.3);
+        }
+
+        /* ====================================================
+           [AI] Основная область — каркас
+           ==================================================== */
+        .main {
+            flex: 1;
+            padding: 28px 36px 36px;
+            min-height: 100vh;
+            overflow-y: auto;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 28px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .page-header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--aero-text);
+            letter-spacing: -0.3px;
+        }
+
+        .page-header .date { font-size: 14px; color: var(--aero-gray); }
+
+        /* ====================================================
+           [MIX] Профиль-бар: каркас от нейросети,
+           [MAN] декор (радиальные градиенты + полупрозрачный ✈)
+                 добавлен вручную — «премиальность».
+           ==================================================== */
+        .profile-bar {
+            background: linear-gradient(135deg, #0a1628 0%, #001f4d 100%);
+            border-radius: 16px;
+            padding: 20px 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 31, 77, 0.25);
+        }
+
+        .profile-bar::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 90% 20%, rgba(201, 168, 76, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 10% 80%, rgba(77, 159, 255, 0.15) 0%, transparent 50%);
+            pointer-events: none;
+        }
+
+        .profile-bar::after {
+            content: '✈';
+            position: absolute;
+            right: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 90px;
+            color: rgba(255, 255, 255, 0.03);
+            pointer-events: none;
+        }
+
+        .profile-bar > div { position: relative; z-index: 1; }
+
+        .profile-bar .name {
+            font-weight: 700;
+            font-size: 17px;
+            color: #ffffff;
+            display: block;
+        }
+
+        .profile-bar .spec {
+            font-size: 13px;
+            color: #8899aa;
+            margin-top: 2px;
+            display: block;
+        }
+
+        .status-badge {
+            padding: 6px 18px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            display: inline-block;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .status-badge.ready { background: rgba(22, 163, 74, 0.2); color: #4ade80; }
+        .status-badge.recording {
+            background: rgba(220, 38, 38, 0.2);
+            color: #fca5a5;
+            animation: pulse-recording 1.5s ease-in-out infinite;
+        }
+        .status-badge.sent { background: rgba(77, 159, 255, 0.2); color: #93c5fd; }
+
+        @keyframes pulse-recording {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ====================================================
+           [AI] Универсальная карточка
+           ==================================================== */
+        .card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid var(--aero-gray-light);
+            box-shadow: var(--shadow-soft);
+            margin-bottom: 24px;
+        }
+
+        .card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--aero-text);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card h3::before {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 16px;
+            background: linear-gradient(180deg, var(--aero-blue), var(--aero-gold));
+            border-radius: 2px;
+        }
+
+        /* ====================================================
+           [MIX] Блок диктофона: каркас от нейросети,
+           [MAN] «тревожное» состояние .recording (красный фон)
+                 добавлено вручную — визуальная обратная связь.
+           ==================================================== */
+        .recorder-block {
+            background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+            border: 1px solid var(--aero-gray-light);
+            border-radius: 14px;
+            padding: 24px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .recorder-block.recording {
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+            border-color: #fecaca;
+        }
+
+        .recorder-viz {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            height: 60px;
+            margin-bottom: 20px;
+        }
+
+        .recorder-viz .bar {
+            width: 6px;
+            background: var(--aero-blue);
+            border-radius: 3px;
+            transition: height 0.1s ease;
+            min-height: 4px;
+        }
+
+        .recorder-block.recording .recorder-viz .bar {
+            background: var(--aero-red);
+            animation: barPulse 0.6s ease-in-out infinite;
+        }
+
+        @keyframes barPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .recorder-timer {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--aero-text);
+            letter-spacing: -1px;
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 16px;
+        }
+
+        .recorder-block.recording .recorder-timer { color: var(--aero-red); }
+
+        .recorder-controls {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-record {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, var(--aero-red) 0%, #b91c1c 100%);
+            color: white;
+            font-size: 26px;
+            cursor: pointer;
+            transition: all var(--transition);
+            box-shadow: 0 8px 24px rgba(220, 38, 38, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-record:hover {
+            transform: scale(1.08);
+            box-shadow: 0 12px 32px rgba(220, 38, 38, 0.45);
+        }
+
+        .btn-record.recording {
+            background: linear-gradient(135deg, #1a2332 0%, #0a1628 100%);
+            animation: recPulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes recPulse {
+            0%, 100% { box-shadow: 0 8px 24px rgba(26, 35, 50, 0.35); }
+            50% { box-shadow: 0 8px 32px rgba(220, 38, 38, 0.5), 0 0 0 8px rgba(220, 38, 38, 0.1); }
+        }
+
+        /* ====================================================
+           [AI] Мини-плеер — каркас
+           ==================================================== */
+        .audio-player {
+            background: #ffffff;
+            border: 1px solid var(--aero-gray-light);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .audio-player.hidden { display: none; }
+
+        .audio-play-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, var(--aero-blue) 0%, var(--aero-blue-light) 100%);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0, 51, 102, 0.25);
+        }
+
+        .audio-play-btn:hover { transform: scale(1.05); }
+
+        .audio-player .audio-info { flex: 1; text-align: left; }
+
+        .audio-player .audio-info .audio-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--aero-text);
+        }
+
+        .audio-player .audio-info .audio-meta {
+            font-size: 11px;
+            color: var(--aero-gray);
+            margin-top: 2px;
+        }
+
+        .audio-player audio { display: none; }
+
+        .audio-progress {
+            width: 100%;
+            height: 4px;
+            background: var(--aero-gray-light);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .audio-progress .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--aero-blue), var(--aero-gold));
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.2s linear;
+        }
+
+        /* ====================================================
+           [AI] Кнопки — типовой набор
+           ==================================================== */
+        .btn {
+            padding: 11px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition);
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            letter-spacing: 0.2px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--aero-blue) 0%, var(--aero-blue-light) 100%);
+            color: white;
+            box-shadow: 0 4px 16px rgba(0, 51, 102, 0.25);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(0, 51, 102, 0.35);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--aero-green) 0%, #15803d 100%);
+            color: white;
+            box-shadow: 0 4px 16px rgba(22, 163, 74, 0.25);
+        }
+        .btn-success:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(22, 163, 74, 0.35);
+        }
+
+        .btn-secondary {
+            background: var(--aero-gray-light);
+            color: var(--aero-text-light);
+        }
+        .btn-secondary:hover { background: #d0d7e2; }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-full { width: 100%; justify-content: center; }
+
+        /* ====================================================
+           [AI] Карточка записи в истории
+           ==================================================== */
+        .record-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            border-left: 4px solid var(--aero-green);
+            transition: all var(--transition);
+        }
+
+        .record-item:hover {
+            background: var(--aero-blue-pale);
+            transform: translateX(3px);
+        }
+
+        .record-item .record-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--aero-green);
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .record-item .record-info { flex: 1; min-width: 0; }
+
+        .record-item .record-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--aero-text);
+        }
+
+        .record-item .record-meta {
+            font-size: 11px;
+            color: var(--aero-gray);
+            margin-top: 2px;
+        }
+
+        .record-item .record-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .record-item .record-actions button {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: none;
+            background: #ffffff;
+            color: var(--aero-text-light);
+            cursor: pointer;
+            transition: all var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .record-item .record-actions button:hover {
+            background: var(--aero-blue);
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--aero-gray);
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            opacity: 0.3;
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        .empty-state p { font-size: 14px; font-weight: 500; }
+
+        /* ====================================================
+           [AI] Тосты
+           ==================================================== */
+        .toast {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #0a1628 0%, #001f4d 100%);
+            color: #ffffff;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+            z-index: 9999;
+            animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            font-family: inherit;
+            max-width: 420px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toast.success { border-left: 4px solid var(--aero-green); }
+        .toast.error { border-left: 4px solid var(--aero-red); }
+        .toast.warning { border-left: 4px solid var(--aero-orange); }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(60px) scale(0.9); }
+            to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+
+        /* ====================================================
+           [MIX] Модалки: каркас от нейросети,
+           [MAN] «золотая полоса» сверху и анимация shimmer —
+                 ручная доработка.
+           ==================================================== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(6px);
+            z-index: 20000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.show { display: flex; }
+
+        .modal {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 28px 32px;
+            max-width: 480px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+            animation: modalIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .modal::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--aero-blue) 0%, #4d9fff 30%, var(--aero-gold) 70%, var(--aero-blue) 100%);
+            background-size: 200% 100%;
+            animation: goldShimmer 6s linear infinite;
+        }
+
+        @keyframes goldShimmer {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
+        }
+
+        @keyframes modalIn {
+            from { transform: scale(0.92) translateY(-20px); opacity: 0; }
+            to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--aero-gray-light);
+        }
+
+        .modal-header h2 {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--aero-text);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--aero-gray);
+            transition: all var(--transition);
+            line-height: 1;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: var(--aero-gray-light);
+            color: var(--aero-text);
+        }
+
+        /* ====================================================
+           [MAN] Выбор микрофона — вручную, т.к. типовые
+           браузерные списки не подходят для диспетчерской.
+           ==================================================== */
+        .mic-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .mic-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            border: 2px solid var(--aero-gray-light);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all var(--transition);
+            background: #fafbfc;
+        }
+
+        .mic-item:hover {
+            border-color: var(--aero-blue-light);
+            background: var(--aero-blue-pale);
+        }
+
+        .mic-item.selected {
+            border-color: var(--aero-blue);
+            background: var(--aero-blue-pale);
+            box-shadow: 0 0 0 4px rgba(0, 51, 102, 0.08);
+        }
+
+        .mic-item .mic-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--aero-blue-pale) 0%, #dbeafe 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--aero-blue);
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .mic-item .mic-info { flex: 1; min-width: 0; }
+
+        .mic-item .mic-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--aero-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mic-item .mic-id {
+            font-size: 11px;
+            color: var(--aero-gray);
+            margin-top: 2px;
+            font-family: Consolas, monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mic-item .mic-check {
+            color: var(--aero-blue);
+            font-size: 18px;
+            display: none;
+        }
+
+        .mic-item.selected .mic-check { display: block; }
+
+        .info-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 14px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
+
+        .info-box i {
+            margin-right: 8px;
+            color: #dc2626;
+        }
+
+        .info-list {
+            margin: 10px 0 0 0;
+            padding-left: 22px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        /* ====================================================
+           [AI] Адаптив — типовые брейкпоинты
+           ==================================================== */
+        @media (max-width: 768px) {
+            .sidebar { width: 68px; padding: 16px 12px; }
+            .sidebar-brand .brand-text,
+            .sidebar-user .user-info,
+            .sidebar-nav li a span,
+            .sidebar-footer .btn-logout span { display: none; }
+            .sidebar-nav li a { justify-content: center; padding: 12px; }
+            .sidebar-nav li a i { margin: 0; font-size: 18px; }
+            .sidebar-user { justify-content: center; }
+            .sidebar-footer .btn-logout { padding: 12px; }
+            .main { padding: 20px; }
+            .profile-bar { flex-direction: column; align-items: flex-start; }
+            .recorder-controls { flex-direction: column; align-items: center; }
+        }
+
+        @media (max-width: 480px) {
+            .sidebar { display: none; }
+            .main { padding: 16px; }
+            .page-header h1 { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ====================================================
+         [AI] Sidebar — сгенерировано нейросетью
+         ==================================================== -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon">✈</div>
+            <div class="brand-text">
+                <span class="brand-in">In</span><span class="brand-tr">Tr</span><span class="brand-avia">Avia</span>
+            </div>
+        </div>
+
+        <div class="sidebar-user">
+            <div class="avatar" id="userAvatar">👨‍✈️</div>
+            <div class="user-info">
+                <div class="name" id="userName">Пилот</div>
+                <div class="role" id="userRole">Командир ВС</div>
+            </div>
+        </div>
+
+        <ul class="sidebar-nav">
+            <li class="active"><a href="#"><i class="fas fa-microphone"></i><span>Запись заявки</span></a></li>
+        </ul>
+
+        <div class="sidebar-footer">
+            <button class="btn-logout" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Выйти</span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="main">
+
+        <!-- [AI] Заголовок страницы -->
+        <div class="page-header">
+            <h1>Запись заявки</h1>
+            <span class="date" id="currentDate"></span>
+        </div>
+
+        <!-- [MIX] Профиль-бар: каркас AI, декор вручную -->
+        <div class="profile-bar">
+            <div>
+                <span class="name" id="profileName">Пилот</span>
+                <span class="spec" id="profileSpec">Командир ВС</span>
+            </div>
+            <div>
+                <span class="status-badge ready" id="statusBadge">Готов к записи</span>
+            </div>
+        </div>
+
+        <!-- ====================================================
+             [MIX] Карточка записи — каркас AI, ручные доработки:
+                   - кнопка «Перезаписать» показывается после stop;
+                   - встроенный мини-плеер с прогресс-баром.
+             ==================================================== -->
+        <div class="card">
+            <h3>Голосовое сообщение</h3>
+
+            <div class="recorder-block" id="recorderBlock">
+                <div class="recorder-viz" id="recorderViz">
+                    <div class="bar" style="height: 10px;"></div>
+                    <div class="bar" style="height: 20px;"></div>
+                    <div class="bar" style="height: 30px;"></div>
+                    <div class="bar" style="height: 40px;"></div>
+                    <div class="bar" style="height: 50px;"></div>
+                    <div class="bar" style="height: 40px;"></div>
+                    <div class="bar" style="height: 30px;"></div>
+                    <div class="bar" style="height: 20px;"></div>
+                    <div class="bar" style="height: 10px;"></div>
+                </div>
+
+                <div class="recorder-timer" id="recorderTimer">00:00</div>
+
+                <div class="recorder-controls">
+                    <button class="btn-record" id="recordBtn" onclick="toggleRecording()" title="Начать запись">
+                        <i class="fas fa-microphone" id="recordIcon"></i>
+                    </button>
+                    <button class="btn btn-secondary" id="resetBtn" onclick="resetRecording()" style="display:none;">
+                        <i class="fas fa-redo"></i> Перезаписать
+                    </button>
+                </div>
+
+                <div class="audio-player hidden" id="audioPlayer">
+                    <button class="audio-play-btn" id="playBtn" onclick="togglePlayback()">
+                        <i class="fas fa-play" id="playIcon"></i>
+                    </button>
+                    <div class="audio-info">
+                        <div class="audio-title">Запись готова</div>
+                        <div class="audio-meta" id="audioMeta">0 сек • Готово к отправке</div>
+                        <div class="audio-progress">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                    </div>
+                    <audio id="audioElement" controls playsinline></audio>
+                </div>
+            </div>
+
+            <button class="btn btn-success btn-full" id="sendBtn" onclick="sendRequest()" disabled style="margin-top: 20px;">
+                <i class="fas fa-paper-plane"></i> Отправить заявку диспетчеру
+            </button>
+        </div>
+
+        <!-- [AI] История отправленных заявок (локальная) -->
+        <div class="card">
+            <h3>Отправленные заявки</h3>
+            <div id="recordsList">
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <p>Пока нет отправленных заявок</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- [MAN] Модалка выбора микрофона — вручную -->
+    <div class="modal-overlay" id="micModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Выбор микрофона</h2>
+                <button class="modal-close" onclick="closeMicModal()">×</button>
+            </div>
+            <div id="micModalContent"></div>
+        </div>
+    </div>
+
+    <!-- [MAN] Модалка-объяснялка — вручную -->
+    <div class="modal-overlay" id="helpModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Почему микрофон недоступен</h2>
+                <button class="modal-close" onclick="closeHelpModal()">×</button>
+            </div>
+            <div id="helpModalContent"></div>
+        </div>
+    </div>
+
+    <!-- [AI] Модалка прослушивания записи из истории -->
+    <div class="modal-overlay" id="playModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="playModalTitle">Прослушивание записи</h2>
+                <button class="modal-close" onclick="closePlayModal()">×</button>
+            </div>
+            <div id="playModalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        /* ============================================================
+           InTrAvia Dispatch — Кабинет пилота
+           ============================================================
+           Ключевые моменты (ручная доработка поверх каркаса AI):
+           - MediaRecorder.start(250) — чанки по 250 мс;
+           - ПЕРЕД stop() вызывается requestData() — чтобы браузер
+             отдал все накопленные данные;
+           - onstop собирает Blob через setTimeout(200),
+             чтобы гарантированно дождаться последнего ondataavailable;
+           - audioChunks НЕ очищаются до onstop;
+           - длительность фиксируется из audio.duration (метаданные blob),
+             fallback — таймер (у webm из MediaRecorder duration = Infinity).
+           ============================================================ */
+
+        // [AI] Константы и состояние — типовой каркас
+        var API_URL = '/api';
+
+        var mediaRecorder = null;
+        var audioChunks = [];
+        var audioBlob = null;
+        var audioUrl = null;
+        var recordingStartTime = 0;
+        var recordingTimerInterval = null;
+        var audioContext = null;
+        var analyserNode = null;
+        var vizAnimationId = null;
+        var isRecording = false;
+        var isPlaying = false;
+        var records = [];
+
+        // [MAN] Длительность фиксируем отдельно — AI-каркас
+        // полагался только на audio.duration, но у webm
+        // из MediaRecorder он равен Infinity.
+        var finalDuration = 0;
+
+        var selectedMicId = null;
+        var availableMics = [];
+
+        var STORAGE_KEY = 'pilotRecords_v4';
+        var MIC_STORAGE_KEY = 'pilotSelectedMic';
+
+        // ============================================================
+        // [AI] Проверка сессии и заполнение шапки — типовой каркас
+        // ============================================================
+        (function() {
+            var session = sessionStorage.getItem('userSession');
+            if (!session) { window.location.href = '/login.html'; return; }
+
+            var user;
+            try {
+                user = JSON.parse(session);
+                if (user.role !== 'pilot') {
+                    window.location.href = '/login.html';
+                    return;
+                }
+            } catch (_) { window.location.href = '/login.html'; return; }
+
+            document.getElementById('userName').textContent = user.name || 'Пилот';
+            document.getElementById('userAvatar').textContent = user.avatar || '👨‍✈️';
+            document.getElementById('userRole').textContent = user.rank || 'Командир ВС';
+            document.getElementById('profileName').textContent = user.name || 'Пилот';
+            document.getElementById('profileSpec').textContent = user.rank || 'Пилот';
+        })();
+
+        // [AI] Дата в шапке
+        (function() {
+            var now = new Date();
+            var months = ['января','февраля','марта','апреля','мая','июня',
+                'июля','августа','сентября','октября','ноября','декабря'];
+            document.getElementById('currentDate').textContent =
+                now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+        })();
+
+        // ============================================================
+        // [AI] Тосты — сгенерировано нейросетью
+        // ============================================================
+        function showToast(message, type) {
+            type = type || 'info';
+            var existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 4000);
+        }
+
+        // [AI] Формат MM:SS
+        function formatTime(seconds) {
+            var min = Math.floor(seconds / 60);
+            var sec = Math.floor(seconds % 60);
+            return (min < 10 ? '0' : '') + min + ':' + (sec < 10 ? '0' : '') + sec;
+        }
+
+        // [AI] Бейдж статуса
+        function setStatus(status) {
+            var badge = document.getElementById('statusBadge');
+            var map = {
+                'ready': { label: 'Готов к записи', class: 'ready' },
+                'recording': { label: '● Идёт запись', class: 'recording' },
+                'sent': { label: 'Заявка отправлена', class: 'sent' }
+            };
+            var st = map[status] || map.ready;
+            badge.textContent = st.label;
+            badge.className = 'status-badge ' + st.class;
+        }
+
+        // ============================================================
+        // [MAN] Проверка контекста и API — вручную.
+        // Нейросеть в первой версии просто вызывала getUserMedia
+        // без пояснений, из-за чего пилоты впадали в ступор
+        // при открытии по http://<ip>:5000.
+        // ============================================================
+        function isSecureContext() {
+            if (location.protocol === 'https:') return true;
+            if (location.hostname === 'localhost') return true;
+            if (location.hostname === '127.0.0.1') return true;
+            if (location.hostname === '[::1]') return true;
+            return false;
+        }
+
+        function hasGetUserMedia() {
+            return !!(
+                (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ||
+                navigator.getUserMedia ||
+                navigator.webkitGetUserMedia ||
+                navigator.mozGetUserMedia ||
+                navigator.msGetUserMedia
+            );
+        }
+
+        // [MAN] Модалка с объяснением, почему микрофон недоступен
+        function showHelpModal(reason) {
+            var content = '';
+            if (reason === 'insecure') {
+                content =
+                    '<div class="info-box"><i class="fas fa-exclamation-triangle"></i>' +
+                    '<strong>Страница открыта по незащищённому протоколу.</strong></div>' +
+                    '<p style="font-size:14px;line-height:1.7;color:#4a5a6a;">' +
+                    'Браузер разрешает доступ к микрофону только на защищённых страницах. ' +
+                    'Сейчас страница открыта как <code>' + location.protocol + '//' + location.host + '</code>.</p>' +
+                    '<ul class="info-list">' +
+                    '<li>Откройте сайт по адресу <strong>https://…</strong></li>' +
+                    '<li>Или запустите локально через <strong>http://localhost</strong></li>' +
+                    '</ul>' +
+                    '<div class="modal-actions"><button class="btn btn-primary" onclick="closeHelpModal()" style="flex:1;justify-content:center;">Понятно</button></div>';
+            } else if (reason === 'no_api') {
+                content =
+                    '<div class="info-box"><i class="fas fa-exclamation-triangle"></i>' +
+                    '<strong>Браузер не поддерживает запись с микрофона.</strong></div>' +
+                    '<p style="font-size:14px;line-height:1.7;color:#4a5a6a;">API для работы с микрофоном отсутствует.</p>' +
+                    '<div class="modal-actions"><button class="btn btn-primary" onclick="closeHelpModal()" style="flex:1;justify-content:center;">Понятно</button></div>';
+            } else if (reason === 'no_recorder') {
+                content =
+                    '<div class="info-box"><i class="fas fa-exclamation-triangle"></i>' +
+                    '<strong>Браузер не поддерживает запись звука (MediaRecorder).</strong></div>' +
+                    '<div class="modal-actions"><button class="btn btn-primary" onclick="closeHelpModal()" style="flex:1;justify-content:center;">Понятно</button></div>';
+            }
+            document.getElementById('helpModalContent').innerHTML = content;
+            document.getElementById('helpModal').classList.add('show');
+        }
+
+        function closeHelpModal() {
+            document.getElementById('helpModal').classList.remove('show');
+        }
+
+        // ============================================================
+        // [MAN] Модалка выбора микрофона — вручную.
+        // Пилоты на разных бортах используют разные гарнитуры,
+        // браузер не всегда выбирает ту, что нужна.
+        // ============================================================
+        function openMicModal(mics, currentId, onSelect) {
+            availableMics = mics;
+            var html = '';
+            if (mics.length === 0) {
+                html =
+                    '<div class="info-box"><i class="fas fa-info-circle"></i>' +
+                    'Не найдено ни одного микрофона.</div>' +
+                    '<div style="display:flex;gap:8px;">' +
+                    '<button class="btn btn-secondary" onclick="closeMicModal()" style="flex:1;justify-content:center;">Закрыть</button></div>';
+            } else {
+                html += '<p style="font-size:13px;color:#4a5a6a;margin-bottom:12px;">Выберите устройство:</p>';
+                html += '<div class="mic-list">';
+                for (var i = 0; i < mics.length; i++) {
+                    var m = mics[i];
+                    var isSelected = m.deviceId === currentId;
+                    var label = m.label || ('Микрофон ' + (i + 1));
+                    var shortId = m.deviceId ? m.deviceId.substring(0, 20) + (m.deviceId.length > 20 ? '…' : '') : '—';
+                    html +=
+                        '<div class="mic-item' + (isSelected ? ' selected' : '') + '" data-mic-id="' + m.deviceId + '">' +
+                        '<div class="mic-icon"><i class="fas fa-microphone"></i></div>' +
+                        '<div class="mic-info">' +
+                        '<div class="mic-label">' + escapeHtml(label) + '</div>' +
+                        '<div class="mic-id">' + escapeHtml(shortId) + '</div>' +
+                        '</div>' +
+                        '<div class="mic-check"><i class="fas fa-check-circle"></i></div>' +
+                        '</div>';
+                }
+                html += '</div>';
+                html +=
+                    '<div style="display:flex;gap:8px;margin-top:16px;">' +
+                    '<button class="btn btn-primary" onclick="confirmMicSelection()" style="flex:1;justify-content:center;"><i class="fas fa-check"></i> Применить</button>' +
+                    '<button class="btn btn-secondary" onclick="closeMicModal()" style="flex:1;justify-content:center;">Отмена</button>' +
+                    '</div>';
+            }
+            document.getElementById('micModalContent').innerHTML = html;
+            document.getElementById('micModal').classList.add('show');
+
+            var items = document.querySelectorAll('#micModalContent .mic-item');
+            items.forEach(function(item) {
+                item.addEventListener('click', function() {
+                    items.forEach(function(other) { other.classList.remove('selected'); });
+                    this.classList.add('selected');
+                    selectedMicId = this.getAttribute('data-mic-id');
+                });
+            });
+
+            window.__micOnSelect = onSelect;
+        }
+
+        // [MAN] Сохраняем выбранный микрофон между сессиями
+        function confirmMicSelection() {
+            if (selectedMicId && typeof window.__micOnSelect === 'function') {
+                localStorage.setItem(MIC_STORAGE_KEY, selectedMicId);
+                window.__micOnSelect(selectedMicId);
+            }
+            closeMicModal();
+        }
+
+        function closeMicModal() {
+            document.getElementById('micModal').classList.remove('show');
+        }
+
+        // [AI] Экранирование HTML
+        function escapeHtml(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // ============================================================
+        // [MIX] Запись — каркас от нейросети,
+        // [MAN] критичные доработки:
+        //   - разделение startRecording / startRecordingWithDevice
+        //     (сначала запрашиваем разрешение и enumerateDevices,
+        //      потом выбираем устройство);
+        //   - проверка secure context / API до старта.
+        // ============================================================
+        function toggleRecording() {
+            if (isRecording) stopRecording();
+            else startRecording();
+        }
+
+        function startRecording() {
+            if (!isSecureContext()) { showHelpModal('insecure'); return; }
+            if (!hasGetUserMedia()) { showHelpModal('no_api'); return; }
+            if (typeof MediaRecorder === 'undefined') { showHelpModal('no_recorder'); return; }
+
+            var getUserMedia =
+                (navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+                    ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+                    : function(constraints) {
+                        return new Promise(function(resolve, reject) {
+                            var legacy = navigator.getUserMedia || navigator.webkitGetUserMedia ||
+                                         navigator.mozGetUserMedia || navigator.msGetUserMedia;
+                            if (!legacy) { reject(new Error('getUserMedia не поддерживается')); return; }
+                            legacy.call(navigator, constraints, resolve, reject);
+                        });
+                    };
+
+            getUserMedia({ audio: true })
+                .then(function(stream) {
+                    stream.getTracks().forEach(function(t) { t.stop(); });
+
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                        startRecordingWithDevice(null);
+                        return;
+                    }
+
+                    navigator.mediaDevices.enumerateDevices()
+                        .then(function(devices) {
+                            var mics = devices.filter(function(d) { return d.kind === 'audioinput'; });
+                            if (mics.length <= 1) {
+                                var micId = mics.length === 1 ? mics[0].deviceId : null;
+                                startRecordingWithDevice(micId);
+                                return;
+                            }
+                            var savedMic = localStorage.getItem(MIC_STORAGE_KEY) || null;
+                            var hasSaved = false;
+                            for (var i = 0; i < mics.length; i++) {
+                                if (mics[i].deviceId === savedMic) { hasSaved = true; break; }
+                            }
+                            openMicModal(mics, hasSaved ? savedMic : mics[0].deviceId, function(micId) {
+                                startRecordingWithDevice(micId);
+                            });
+                        })
+                        .catch(function() { startRecordingWithDevice(null); });
+                })
+                .catch(function(err) {
+                    console.error('Ошибка доступа к микрофону:', err);
+                    var msg = 'Не удалось получить доступ к микрофону';
+                    if (err && err.name === 'NotAllowedError') msg = 'Доступ к микрофону запрещён.';
+                    else if (err && err.name === 'NotFoundError') msg = 'Микрофон не найден.';
+                    else if (err && err.name === 'NotReadableError') msg = 'Микрофон занят.';
+                    else if (err && err.name === 'SecurityError') { showHelpModal('insecure'); return; }
+                    showToast(msg, 'error');
+                });
+        }
+
+        function startRecordingWithDevice(deviceId) {
+            var constraints = { audio: true };
+            if (deviceId) {
+                constraints.audio = {
+                    deviceId: { exact: deviceId },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                };
+            } else {
+                constraints.audio = {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                };
+            }
+
+            var getUserMedia =
+                (navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+                    ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+                    : function(c) {
+                        return new Promise(function(resolve, reject) {
+                            var legacy = navigator.getUserMedia || navigator.webkitGetUserMedia ||
+                                         navigator.mozGetUserMedia || navigator.msGetUserMedia;
+                            if (!legacy) { reject(new Error('getUserMedia не поддерживается')); return; }
+                            legacy.call(navigator, c, resolve, reject);
+                        });
+                    };
+
+            getUserMedia(constraints).then(function(stream) {
+                // [AI] Подбор mimeType — каркас от нейросети
+                var mimeType = '';
+                var candidates = [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/ogg;codecs=opus',
+                    'audio/ogg',
+                    'audio/mp4',
+                    'audio/mpeg'
+                ];
+                if (MediaRecorder.isTypeSupported) {
+                    for (var i = 0; i < candidates.length; i++) {
+                        if (MediaRecorder.isTypeSupported(candidates[i])) {
+                            mimeType = candidates[i];
+                            break;
+                        }
+                    }
+                }
+
+                try {
+                    mediaRecorder = mimeType
+                        ? new MediaRecorder(stream, { mimeType: mimeType })
+                        : new MediaRecorder(stream);
+                } catch (e) {
+                    try {
+                        mediaRecorder = new MediaRecorder(stream);
+                    } catch (e2) {
+                        showHelpModal('no_recorder');
+                        return;
+                    }
+                }
+
+                // ============================================================
+                // [MAN] ВАЖНО: обнуляем буфер и сбрасываем флаги.
+                // Без этого при повторной записи в Blob попадали
+                // куски предыдущей сессии.
+                // ============================================================
+                audioChunks = [];
+                finalDuration = 0;
+
+                mediaRecorder.ondataavailable = function(e) {
+                    if (e.data && e.data.size > 0) {
+                        audioChunks.push(e.data);
+                        console.log('[REC] chunk', e.data.size, 'bytes, всего:', audioChunks.length);
+                    }
+                };
+
+                mediaRecorder.onerror = function(e) {
+                    console.error('MediaRecorder error:', e);
+                    showToast('Ошибка записи', 'error');
+                };
+
+                // ============================================================
+                // [MAN] ВАЖНО: собираем Blob через setTimeout, чтобы
+                // гарантированно дождаться последнего ondataavailable.
+                // Иначе Blob содержит только первый кластер (~1 секунда).
+                // Это была ключевая проблема, которую нейросеть не решила.
+                // ============================================================
+                mediaRecorder.onstop = function() {
+                    var timerDuration = Math.round((Date.now() - recordingStartTime) / 1000);
+                    if (timerDuration < 0) timerDuration = 0;
+
+                    setTimeout(function() {
+                        if (!audioChunks.length) {
+                            showToast('Не удалось записать звук', 'error');
+                            return;
+                        }
+
+                        var finalMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
+                        audioBlob = new Blob(audioChunks, { type: finalMime });
+
+                        console.log('[REC] FINAL blob:', audioBlob.size, 'bytes, чанков:', audioChunks.length, 'mime:', finalMime);
+
+                        if (audioBlob.size < 2000) {
+                            showToast('Запись слишком короткая, попробуйте ещё раз', 'warning');
+                            audioBlob = null;
+                            return;
+                        }
+
+                        if (audioUrl) URL.revokeObjectURL(audioUrl);
+                        audioUrl = URL.createObjectURL(audioBlob);
+
+                        var audioEl = document.getElementById('audioElement');
+                        audioEl.src = audioUrl;
+                        audioEl.load();
+
+                        // [MAN] Длительность: сначала пробуем metadata,
+                        // но у webm duration = Infinity — поэтому fallback
+                        // на таймер, а не наоборот.
+                        var applyDuration = function(seconds) {
+                            if (!seconds || !isFinite(seconds) || seconds <= 0) {
+                                seconds = timerDuration;
+                            }
+                            finalDuration = Math.round(seconds);
+
+                            document.getElementById('audioPlayer').classList.remove('hidden');
+                            document.getElementById('audioMeta').textContent =
+                                finalDuration + ' сек • Готово к отправке';
+
+                            document.getElementById('recordBtn').style.display = 'none';
+                            document.getElementById('resetBtn').style.display = 'inline-flex';
+                            document.getElementById('sendBtn').disabled = false;
+
+                            setStatus('ready');
+                            showToast('Запись завершена. Прослушайте и отправьте.', 'success');
+                        };
+
+                        if (audioEl.readyState >= 1 && audioEl.duration && isFinite(audioEl.duration)) {
+                            applyDuration(audioEl.duration);
+                        } else {
+                            var handled = false;
+                            var onMeta = function() {
+                                if (handled) return;
+                                handled = true;
+                                audioEl.removeEventListener('loadedmetadata', onMeta);
+                                applyDuration(audioEl.duration);
+                            };
+                            audioEl.addEventListener('loadedmetadata', onMeta);
+                            setTimeout(function() {
+                                if (!handled) {
+                                    handled = true;
+                                    audioEl.removeEventListener('loadedmetadata', onMeta);
+                                    applyDuration(timerDuration);
+                                }
+                            }, 800);
+                        }
+                    }, 250); // ← даём браузеру время на финальный dataavailable
+                };
+
+                // [AI] Визуализация через AnalyserNode — каркас
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    var source = audioContext.createMediaStreamSource(stream);
+                    analyserNode = audioContext.createAnalyser();
+                    analyserNode.fftSize = 64;
+                    source.connect(analyserNode);
+
+                    var dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+                    var bars = document.querySelectorAll('#recorderViz .bar');
+
+                    function animateViz() {
+                        if (!isRecording) return;
+                        analyserNode.getByteFrequencyData(dataArray);
+                        var step = Math.floor(dataArray.length / bars.length) || 1;
+                        for (var i = 0; i < bars.length; i++) {
+                            var sum = 0;
+                            for (var j = 0; j < step; j++) sum += dataArray[i * step + j] || 0;
+                            var avg = sum / step;
+                            var height = Math.max(4, (avg / 255) * 60);
+                            bars[i].style.height = height + 'px';
+                        }
+                        vizAnimationId = requestAnimationFrame(animateViz);
+                    }
+                    animateViz();
+                } catch (vizErr) {
+                    console.warn('Визуализация недоступна:', vizErr);
+                }
+
+                // [AI] Старт записи чанками по 250 мс
+                try {
+                    mediaRecorder.start(250);
+                } catch (e) {
+                    showToast('Не удалось запустить запись', 'error');
+                    return;
+                }
+
+                isRecording = true;
+                recordingStartTime = Date.now();
+
+                document.getElementById('recorderBlock').classList.add('recording');
+                document.getElementById('recordBtn').classList.add('recording');
+                document.getElementById('recordIcon').className = 'fas fa-stop';
+                document.getElementById('recordBtn').title = 'Остановить запись';
+                setStatus('recording');
+
+                // [MAN] Лимит 3 минуты — вручную
+                document.getElementById('recorderTimer').textContent = '00:00';
+                recordingTimerInterval = setInterval(function() {
+                    var elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+                    document.getElementById('recorderTimer').textContent = formatTime(elapsed);
+                    if (elapsed >= 180) {
+                        stopRecording();
+                        showToast('Максимальная длительность — 3 минуты', 'warning');
+                    }
+                }, 250);
+            }).catch(function(err) {
+                console.error('Ошибка запуска:', err);
+                showToast('Не удалось получить доступ к микрофону', 'error');
+            });
+        }
+
+        function stopRecording() {
+            if (!mediaRecorder || !isRecording) return;
+
+            isRecording = false;
+
+            if (recordingTimerInterval) {
+                clearInterval(recordingTimerInterval);
+                recordingTimerInterval = null;
+            }
+            if (vizAnimationId) {
+                cancelAnimationFrame(vizAnimationId);
+                vizAnimationId = null;
+            }
+            if (audioContext) {
+                try { audioContext.close(); } catch(_) {}
+                audioContext = null;
+            }
+            if (analyserNode) analyserNode = null;
+
+            document.querySelectorAll('#recorderViz .bar').forEach(function(bar) {
+                bar.style.height = '10px';
+            });
+
+            document.getElementById('recorderBlock').classList.remove('recording');
+            document.getElementById('recordBtn').classList.remove('recording');
+            document.getElementById('recordIcon').className = 'fas fa-microphone';
+            document.getElementById('recordBtn').title = 'Начать запись';
+
+            // ============================================================
+            // [MAN] ВАЖНО: сначала просим MediaRecorder отдать всё, что
+            // накопил, потом останавливаем. Иначе финальный
+            // dataavailable может не успеть, и мы получим обрезанный Blob.
+            // ============================================================
+            try {
+                if (mediaRecorder.state === 'recording') {
+                    mediaRecorder.requestData();
+                }
+            } catch (e) {
+                console.warn('requestData не сработал:', e);
+            }
+
+            setTimeout(function() {
+                try { mediaRecorder.stop(); } catch (e) {}
+                try {
+                    mediaRecorder.stream.getTracks().forEach(function(track) { track.stop(); });
+                } catch (_) {}
+            }, 50);
+        }
+
+        // [MAN] Сброс с освобождением objectURL — иначе утечка
+        function resetRecording() {
+            if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
+            audioBlob = null;
+            audioChunks = [];
+            finalDuration = 0;
+
+            document.getElementById('audioPlayer').classList.add('hidden');
+            document.getElementById('audioElement').src = '';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('recorderTimer').textContent = '00:00';
+
+            document.getElementById('recordBtn').style.display = 'flex';
+            document.getElementById('resetBtn').style.display = 'none';
+            document.getElementById('sendBtn').disabled = true;
+
+            setStatus('ready');
+            showToast('Готово к новой записи', 'info');
+        }
+
+        // [AI] Проигрывание — типовой каркас
+        function togglePlayback() {
+            var audio = document.getElementById('audioElement');
+            var icon = document.getElementById('playIcon');
+            var fill = document.getElementById('progressFill');
+
+            if (isPlaying) {
+                audio.pause();
+                isPlaying = false;
+                icon.className = 'fas fa-play';
+            } else {
+                audio.play();
+                isPlaying = true;
+                icon.className = 'fas fa-pause';
+            }
+
+            audio.ontimeupdate = function() {
+                if (audio.duration) {
+                    var percent = (audio.currentTime / audio.duration) * 100;
+                    fill.style.width = percent + '%';
+                }
+            };
+
+            audio.onended = function() {
+                isPlaying = false;
+                icon.className = 'fas fa-play';
+                fill.style.width = '0%';
+            };
+        }
+
+        // ============================================================
+        // [MIX] Отправка заявки: каркас от нейросети,
+        // [MAN] проверки размера Blob, отправка duration,
+        // логирование в консоль для отладки с диспетчерской.
+        // ============================================================
+        function sendRequest() {
+            if (!audioBlob) {
+                showToast('Сначала запишите голосовое сообщение', 'error');
+                return;
+            }
+            if (audioBlob.size < 2000) {
+                showToast('Запись слишком короткая. Попробуйте ещё раз.', 'error');
+                return;
+            }
+
+            var sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Отправка...';
+
+            var session = sessionStorage.getItem('userSession');
+            var user = session ? JSON.parse(session) : {};
+
+            var duration = finalDuration > 0 ? finalDuration : 1;
+
+            var reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = function() {
+                var base64Audio = reader.result;
+
+                console.log('[SEND] blob size =', audioBlob.size,
+                            ', base64 length =', base64Audio.length,
+                            ', duration =', duration);
+
+                var payload = {
+                    source: 'pilot',
+                    engineer_id: user.id || null,
+                    pilot_name: user.name || 'Пилот',
+                    pilot_rank: user.rank || 'КВС',
+                    aircraft: user.aircraft || null,
+                    pilot_audio: base64Audio,
+                    pilot_audio_mime: audioBlob.type || 'audio/webm',
+                    pilot_audio_duration: duration
+                };
+
+                fetch(API_URL + '/dispatch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(result) {
+                    if (!result || !result.success) {
+                        showToast('Сервер вернул ошибку: ' + ((result && result.error) || 'неизвестно'), 'error');
+                        sendBtn.disabled = false;
+                        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить заявку диспетчеру';
+                        return;
+                    }
+
+                    // [MAN] Локальная копия записи в истории —
+                    // сохраняем base64, чтобы можно было прослушать
+                    // даже после перезагрузки страницы.
+                    var record = {
+                        id: 'rec_' + Date.now(),
+                        audioBase64: base64Audio,
+                        audioMime: audioBlob.type,
+                        duration: duration,
+                        sentAt: new Date().toISOString(),
+                        requestId: result.request_id || result.requestId || null
+                    };
+
+                    records.unshift(record);
+                    saveRecords();
+                    renderRecords();
+
+                    showToast('Заявка отправлена диспетчеру', 'success');
+                    setStatus('sent');
+
+                    setTimeout(function() { resetRecording(); }, 800);
+
+                    sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить заявку диспетчеру';
+                    sendBtn.disabled = true;
+                })
+                .catch(function(err) {
+                    console.error(err);
+                    showToast('Ошибка отправки заявки', 'error');
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить заявку диспетчеру';
+                });
+            };
+        }
+
+        // ============================================================
+        // [AI] История записей — каркас от нейросети
+        // ============================================================
+        function saveRecords() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+            } catch (e) {
+                console.warn('Не удалось сохранить записи:', e);
+            }
+        }
+
+        function loadRecords() {
+            try {
+                var saved = localStorage.getItem(STORAGE_KEY);
+                if (!saved) return [];
+                var data = JSON.parse(saved);
+                return Array.isArray(data) ? data : [];
+            } catch (e) { return []; }
+        }
+
+        function renderRecords() {
+            var list = document.getElementById('recordsList');
+
+            if (records.length === 0) {
+                list.innerHTML =
+                    '<div class="empty-state"><i class="fas fa-inbox"></i>' +
+                    '<p>Пока нет отправленных заявок</p></div>';
+                return;
+            }
+
+            var html = '';
+            for (var i = 0; i < records.length; i++) {
+                var r = records[i];
+                var dateStr = new Date(r.sentAt).toLocaleString('ru-RU');
+
+                html += '<div class="record-item">' +
+                    '<div class="record-icon"><i class="fas fa-check"></i></div>' +
+                    '<div class="record-info">' +
+                    '<div class="record-title">🎤 Голосовая заявка</div>' +
+                    '<div class="record-meta">' + dateStr + ' • ' + r.duration + ' сек</div>' +
+                    '</div>' +
+                    '<div class="record-actions">' +
+                    '<button onclick="playRecordFromList(\'' + r.id + '\')" title="Прослушать"><i class="fas fa-play"></i></button>' +
+                    '<button onclick="deleteRecord(\'' + r.id + '\')" title="Удалить"><i class="fas fa-trash"></i></button>' +
+                    '</div>' +
+                    '</div>';
+            }
+            list.innerHTML = html;
+        }
+
+        // [AI] Модалка прослушивания записи из истории
+        function playRecordFromList(recordId) {
+            var record = null;
+            for (var i = 0; i < records.length; i++) {
+                if (records[i].id === recordId) { record = records[i]; break; }
+            }
+            if (!record) { showToast('Запись не найдена', 'error'); return; }
+
+            var dateStr = new Date(record.sentAt).toLocaleString('ru-RU');
+
+            document.getElementById('playModalTitle').textContent = 'Прослушивание записи';
+            document.getElementById('playModalContent').innerHTML =
+                '<div style="margin-bottom:16px;">' +
+                    '<div style="font-size:12px;color:#8a9bb5;margin-bottom:4px;">Дата отправки</div>' +
+                    '<div style="font-size:14px;font-weight:600;">' + dateStr + '</div>' +
+                '</div>' +
+                '<div style="margin-bottom:16px;">' +
+                    '<div style="font-size:12px;color:#8a9bb5;margin-bottom:4px;">Длительность: ' + record.duration + ' сек</div>' +
+                    '<audio controls style="width:100%;" src="' + record.audioBase64 + '"></audio>' +
+                '</div>' +
+                '<div style="display:flex;gap:8px;">' +
+                    '<button class="btn btn-primary" onclick="closePlayModal()" style="flex:1;justify-content:center;">Закрыть</button>' +
+                '</div>';
+
+            document.getElementById('playModal').classList.add('show');
+        }
+
+        function closePlayModal() {
+            document.getElementById('playModal').classList.remove('show');
+        }
+
+        function deleteRecord(recordId) {
+            if (!confirm('Удалить эту заявку из истории?')) return;
+            records = records.filter(function(r) { return r.id !== recordId; });
+            saveRecords();
+            renderRecords();
+            showToast('Заявка удалена', 'success');
+        }
+
+        // [MAN] Logout с корректной очисткой ресурсов — вручную
+        function logout() {
+            if (recordingTimerInterval) clearInterval(recordingTimerInterval);
+            if (vizAnimationId) cancelAnimationFrame(vizAnimationId);
+            if (audioContext) { try { audioContext.close(); } catch(_) {} }
+            if (audioUrl) URL.revokeObjectURL(audioUrl);
+            sessionStorage.removeItem('userSession');
+            window.location.href = '/login.html';
+        }
+
+        // [AI] Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            records = loadRecords();
+            renderRecords();
+            setStatus('ready');
+        });
+
+        // [AI] Экспорт функций в window — типовой каркас
+        window.toggleRecording = toggleRecording;
+        window.resetRecording = resetRecording;
+        window.togglePlayback = togglePlayback;
+        window.sendRequest = sendRequest;
+        window.playRecordFromList = playRecordFromList;
+        window.closePlayModal = closePlayModal;
+        window.deleteRecord = deleteRecord;
+        window.logout = logout;
+        window.closeMicModal = closeMicModal;
+        window.confirmMicSelection = confirmMicSelection;
+        window.closeHelpModal = closeHelpModal;
+    </script>
+</body>
+</html>

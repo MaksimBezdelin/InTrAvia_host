@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Инженер — InTrAvia Dispatch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!--
+    ============================================================
+    InTrAvia Dispatch — Кабинет инженера (frontend)
+    ============================================================
+    Файл собран командой InTrAvia вместе с нейросетью-ассистентом.
+
+    Что сгенерировано нейросетью:
+      - базовая вёрстка: sidebar, profile-bar, stats-grid, cards;
+      - CSS-переменные, статус-бейджи, тосты, нотификации;
+      - каркас Leaflet-карты и отрисовка маркера/полилинии;
+      - каркас формы отчёта о диагностике;
+      - типовой setInterval-опрос /api/engineers каждые 5 сек.
+
+    Что доработано вручную:
+      - ЖЁСТКАЯ блокировка перезаписи UI после отказа от задачи
+        (blockReloadUntil) — иначе опрос затирал экран «Нет задач»
+        ещё до того, как инженер успевал увидеть нотификацию;
+      - сохранение / восстановление черновика формы отчёта при
+        каждом обновлении DOM (saveReportDraft / restoreReportDraft);
+      - сброс маршрута с карты, когда инженер становится free
+        (нейросеть оставляла «висящие» маршруты);
+      - ручная модалка причины отмены с быстрыми кнопками
+        (вместо стандартного prompt);
+      - таймер диагностики с отображением минут и секунд;
+      - парсинг ROUTE:… из engineer_comment как fallback,
+        если пришёл «голый» комментарий без JSON-префикса.
+
+    Каждый блок помечен по происхождению:
+      [AI]  — сгенерировано нейросетью;
+      [MAN] — доработано вручную;
+      [MIX] — смешанная работа.
+    ============================================================
+    -->
+    <style>
+        /* ====================================================
+           [AI] Базовый reset — нейросеть
+           ==================================================== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #f0f2f5; display: flex; min-height: 100vh;
+        }
+
+        /* ====================================================
+           [AI] Sidebar — типовой каркас
+           ==================================================== */
+        .sidebar {
+            width: 240px; background: #ffffff;
+            border-right: 1px solid #e8ecf0; padding: 24px 20px;
+            min-height: 100vh; position: sticky; top: 0; height: 100vh;
+            overflow-y: auto; flex-shrink: 0;
+        }
+        .sidebar-brand {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 8px; padding-bottom: 20px;
+            border-bottom: 1px solid #e8ecf0;
+        }
+        .sidebar-brand .brand-icon {
+            width: 36px; height: 36px; background: #003366;
+            border-radius: 10px; display: flex; align-items: center;
+            justify-content: center; color: white; font-weight: 700; font-size: 16px;
+        }
+        .sidebar-brand .brand-text { font-size: 18px; font-weight: 700; color: #1a2332; }
+        .sidebar-brand .brand-text span { color: #003366; }
+        .sidebar-user {
+            display: flex; align-items: center; gap: 12px;
+            padding: 16px 0; border-bottom: 1px solid #e8ecf0;
+            margin-bottom: 16px;
+        }
+        .sidebar-user .avatar {
+            width: 42px; height: 42px; border-radius: 50%;
+            background: #e8ecf0; display: flex; align-items: center;
+            justify-content: center; font-size: 20px;
+        }
+        .sidebar-user .user-info { flex: 1; }
+        .sidebar-user .user-info .name { font-size: 14px; font-weight: 600; color: #1a2332; }
+        .sidebar-user .user-info .role { font-size: 12px; color: #6a7a8a; }
+        .sidebar-user .user-info .spec { font-size: 11px; color: #8a9bb5; margin-top: 2px; }
+        .sidebar-nav { list-style: none; }
+        .sidebar-nav li { margin-bottom: 2px; }
+        .sidebar-nav li a {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 14px; border-radius: 10px;
+            color: #4a5a6a; text-decoration: none;
+            font-size: 14px; font-weight: 500; transition: all 0.2s ease;
+        }
+        .sidebar-nav li a:hover { background: #f5f6f8; color: #1a2332; }
+        .sidebar-nav li.active a { background: #e8edf5; color: #003366; font-weight: 600; }
+        .sidebar-nav li a i { width: 20px; font-size: 16px; text-align: center; }
+        .sidebar-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e8ecf0; }
+        .btn-logout {
+            width: 100%; padding: 10px; background: #f5f6f8; color: #4a5a6a;
+            border: none; border-radius: 10px;
+            font-size: 14px; font-weight: 500; cursor: pointer;
+            transition: all 0.2s ease; display: flex;
+            align-items: center; justify-content: center; gap: 8px; font-family: inherit;
+        }
+        .btn-logout:hover { background: #fef2f2; color: #dc2626; }
+
+        /* ====================================================
+           [AI] Основная область и шапка
+           ==================================================== */
+        .main { flex: 1; padding: 28px 36px 36px; min-height: 100vh; overflow-y: auto; }
+        .page-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+        }
+        .page-header h1 { font-size: 24px; font-weight: 700; color: #1a2332; }
+        .page-header .date { font-size: 14px; color: #8a9bb5; }
+
+        .profile-bar {
+            background: #ffffff; border-radius: 16px;
+            padding: 16px 24px; border: 1px solid #e8ecf0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+        }
+        .profile-bar .name { font-weight: 600; font-size: 16px; color: #1a2332; }
+        .profile-bar .spec { font-size: 13px; color: #6a7a8a; margin-left: 12px; }
+
+        /* ====================================================
+           [MIX] Статус-бейджи: каркас AI,
+           [MAN] добавлен статус «Работает» (working) — фиолетовый,
+                 его не было в исходной палитре нейросети.
+           ==================================================== */
+        .status-badge {
+            padding: 4px 16px; border-radius: 20px;
+            font-size: 13px; font-weight: 600; display: inline-block;
+        }
+        .status-badge.free { background: #dcfce7; color: #16a34a; }
+        .status-badge.busy { background: #fef3c7; color: #d97706; }
+        .status-badge.arriving { background: #dbeafe; color: #003366; }
+        .status-badge.pending { background: #fef3c7; color: #d97706; }
+        .status-badge.working { background: #f3e8ff; color: #7c3aed; }
+
+        /* ====================================================
+           [AI] Стат-карточки
+           ==================================================== */
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 16px; margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #ffffff; padding: 20px 24px;
+            border-radius: 16px; border: 1px solid #e8ecf0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+        .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #1a2332; }
+        .stat-card .stat-label { font-size: 13px; color: #8a9bb5; margin-top: 4px; }
+        .stat-card .stat-value.green { color: #16a34a; }
+        .stat-card .stat-value.blue { color: #003366; }
+        .stat-card .stat-value.orange { color: #f59e0b; }
+
+        .card {
+            background: #ffffff; border-radius: 16px;
+            padding: 24px; border: 1px solid #e8ecf0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            margin-bottom: 24px;
+        }
+        .card h3 { font-size: 16px; font-weight: 600; color: #1a2332; margin-bottom: 16px; }
+
+        /* ====================================================
+           [AI] Карта Leaflet — каркас
+           ==================================================== */
+        .map-container {
+            height: 320px; border-radius: 12px; overflow: hidden;
+            margin-bottom: 16px; border: 1px solid #e8ecf0;
+            background: #e8ecf0; position: relative;
+        }
+        #map { width: 100%; height: 100%; min-height: 320px; background: #e8ecf0; }
+
+        /* ====================================================
+           [AI] Прогресс-шаги задачи
+           ==================================================== */
+        .steps-progress {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 20px; padding: 16px 20px;
+            background: #f5f7fa; border-radius: 12px;
+            gap: 8px; flex-wrap: wrap;
+        }
+        .step-item {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 13px; font-weight: 500;
+            color: #8a9bb5; flex: 1; min-width: 120px;
+        }
+        .step-item .step-num {
+            width: 28px; height: 28px; border-radius: 50%;
+            background: #e8ecf0; display: flex; align-items: center;
+            justify-content: center; font-weight: 700; font-size: 13px;
+            color: #8a9bb5; flex-shrink: 0;
+        }
+        .step-item.active { color: #003366; font-weight: 600; }
+        .step-item.active .step-num { background: #003366; color: #ffffff; }
+        .step-item.done { color: #16a34a; }
+        .step-item.done .step-num { background: #16a34a; color: #ffffff; }
+        .step-connector { flex: 0 0 20px; height: 2px; background: #e8ecf0; }
+        .step-connector.done { background: #16a34a; }
+
+        /* ====================================================
+           [AI] Карточка задачи
+           ==================================================== */
+        .task-item {
+            display: flex; flex-direction: column; gap: 12px;
+            padding: 20px; background: #dbeafe;
+            border-radius: 12px; border-left: 4px solid #003366;
+        }
+        .task-item .task-title { font-weight: 600; font-size: 18px; color: #1a2332; }
+        .task-item .task-detail { font-size: 14px; color: #4a5a6a; }
+        .task-item .task-route {
+            font-size: 13px; color: #6a7a8a;
+            background: rgba(255,255,255,0.6);
+            padding: 10px 14px; border-radius: 8px;
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        }
+        .task-item .task-route .route-icon { font-size: 20px; }
+        .task-item .task-route .route-time { font-weight: 700; color: #003366; font-size: 16px; }
+        .task-item .task-actions { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+
+        /* ====================================================
+           [AI] Кнопки
+           ==================================================== */
+        .btn {
+            padding: 10px 24px; border: none; border-radius: 10px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s ease; font-family: inherit;
+            display: inline-flex; align-items: center; gap: 8px;
+        }
+        .btn-success { background: #16a34a; color: #ffffff; }
+        .btn-success:hover { background: #15803d; }
+        .btn-danger { background: #dc2626; color: #ffffff; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-primary { background: #003366; color: #ffffff; }
+        .btn-primary:hover { background: #002244; }
+        .btn-warning { background: #f59e0b; color: #ffffff; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-secondary { background: #e8ecf0; color: #4a5a6a; }
+        .btn-secondary:hover { background: #d0d7e2; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .empty-state { text-align: center; padding: 40px 20px; color: #8a9bb5; }
+        .empty-state i { font-size: 48px; opacity: 0.3; display: block; margin-bottom: 12px; }
+
+        /* ====================================================
+           [AI] Тосты
+           ==================================================== */
+        .toast {
+            position: fixed; top: 24px; right: 24px;
+            padding: 14px 24px; background: #1a2332; color: #ffffff;
+            border-radius: 12px; font-size: 14px; font-weight: 500;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            z-index: 9999; animation: slideIn 0.3s ease;
+            font-family: inherit;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .toast.success { border-left: 4px solid #16a34a; }
+        .toast.error { border-left: 4px solid #dc2626; }
+        .toast.warning { border-left: 4px solid #f59e0b; }
+
+        /* ====================================================
+           [MIX] Нотификации: каркас от нейросети,
+           [MAN] звуковой сигнал (WebAudio) добавлен вручную —
+                 инженер может не смотреть в экран.
+           ==================================================== */
+        .notification-container {
+            position: fixed; top: 24px; right: 24px;
+            z-index: 10000; max-width: 420px; width: 100%;
+        }
+        .notification {
+            background: #ffffff; border-radius: 16px;
+            padding: 16px 20px; margin-bottom: 10px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            animation: slideIn 0.3s ease; border-left: 4px solid #003366;
+        }
+        .notification .notif-title { font-weight: 600; font-size: 14px; color: #1a2332; }
+        .notification .notif-text { font-size: 13px; color: #4a5a6a; margin-top: 4px; }
+        .notification .notif-time { font-size: 11px; color: #8a9bb5; margin-top: 6px; }
+
+        /* ====================================================
+           [AI] Форма отчёта — каркас
+           ==================================================== */
+        .report-form {
+            background: #f9fafb; border: 1px solid #e8ecf0;
+            border-radius: 12px; padding: 20px; margin-top: 12px;
+        }
+        .report-form h4 {
+            font-size: 15px; font-weight: 600; color: #1a2332;
+            margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+        }
+        .report-form .form-group { margin-bottom: 14px; }
+        .report-form .form-group label {
+            display: block; font-size: 13px; font-weight: 500;
+            color: #4a5a6a; margin-bottom: 6px;
+        }
+        .report-form .form-group select,
+        .report-form .form-group textarea,
+        .report-form .form-group input {
+            width: 100%; padding: 10px 14px;
+            border: 1px solid #d0d7e2; border-radius: 10px;
+            font-size: 14px; font-family: inherit;
+            background: #ffffff; color: #1a2332;
+            transition: all 0.2s;
+        }
+        .report-form .form-group select:focus,
+        .report-form .form-group textarea:focus,
+        .report-form .form-group input:focus {
+            outline: none; border-color: #003366;
+            box-shadow: 0 0 0 3px rgba(0, 51, 102, 0.08);
+        }
+        .report-form .form-group textarea { resize: vertical; min-height: 100px; }
+        .report-form .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .report-form .checkbox-group {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 13px; color: #4a5a6a; margin-bottom: 10px;
+        }
+        .report-form .checkbox-group input[type="checkbox"] {
+            width: 18px; height: 18px; cursor: pointer;
+        }
+
+        /* ====================================================
+           [MAN] Кнопки быстрого выбора причины — вручную.
+           Стандартный prompt() не подходит для быстрых операций.
+           ==================================================== */
+        .cancel-quick-btn {
+            padding: 6px 12px; border: 1px solid #d0d7e2;
+            background: #f5f7fa; border-radius: 8px;
+            font-size: 12px; cursor: pointer;
+            font-family: inherit; color: #4a5a6a;
+            transition: all .15s;
+        }
+        .cancel-quick-btn:hover {
+            background: #003366; color: #fff; border-color: #003366;
+        }
+
+        /* ====================================================
+           [MAN] Стили Leaflet — вручную отключили attribution
+           ==================================================== */
+        .leaflet-popup-content { font-family: 'Inter', sans-serif; font-size: 12px; }
+        .leaflet-control-attribution { display: none !important; }
+
+        /* ====================================================
+           [AI] Адаптив — типовые брейкпоинты
+           ==================================================== */
+        @media (max-width: 1024px) { .stats-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) {
+            .sidebar { width: 64px; padding: 16px 12px; }
+            .sidebar-brand .brand-text, .sidebar-user .user-info,
+            .sidebar-nav li a span, .sidebar-footer .btn-logout span { display: none; }
+            .sidebar-nav li a { justify-content: center; padding: 12px; }
+            .sidebar-nav li a i { margin: 0; font-size: 18px; }
+            .sidebar-user { justify-content: center; }
+            .sidebar-footer .btn-logout { padding: 12px; }
+            .main { padding: 20px; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .profile-bar { flex-direction: column; align-items: flex-start; }
+            .notification-container { max-width: 90%; right: 10px; }
+            .task-item .task-actions { flex-direction: column; }
+            .task-item .task-actions .btn { width: 100%; justify-content: center; }
+            .report-form .form-row { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 480px) {
+            .sidebar { display: none; }
+            .main { padding: 16px; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .page-header h1 { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ====================================================
+         [AI] Sidebar — сгенерировано нейросетью
+         ==================================================== -->
+    <nav class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon">✈</div>
+            <div class="brand-text">In<span>TrAvia</span></div>
+        </div>
+        <div class="sidebar-user">
+            <div class="avatar" id="userAvatar">🔧</div>
+            <div class="user-info">
+                <div class="name" id="userName">Инженер</div>
+                <div class="role" id="userRole">Инженер ОТО</div>
+                <div class="spec" id="userSpec">Специализация: Двигатели</div>
+            </div>
+        </div>
+        <ul class="sidebar-nav">
+            <li class="active"><a href="#"><i class="fas fa-tasks"></i><span>Мои задачи</span></a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <button class="btn-logout" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Выйти</span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="main">
+        <!-- [AI] Заголовок -->
+        <div class="page-header">
+            <h1>Мои задачи</h1>
+            <span class="date" id="currentDate"></span>
+        </div>
+
+        <!-- [AI] Профиль-бар -->
+        <div class="profile-bar">
+            <div>
+                <span class="name" id="profileName">Инженер</span>
+                <span class="spec" id="profileSpec">Специализация: Двигатели</span>
+            </div>
+            <div>
+                <span class="status-badge free" id="statusBadge">Свободен</span>
+            </div>
+        </div>
+
+        <!-- [AI] Статистика -->
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-value blue" id="taskCount">0</div><div class="stat-label">Активных задач</div></div>
+            <div class="stat-card"><div class="stat-value green" id="doneToday">0</div><div class="stat-label">Выполнено сегодня</div></div>
+            <div class="stat-card"><div class="stat-value orange" id="avgTime">0 мин</div><div class="stat-label">Среднее время</div></div>
+        </div>
+
+        <!-- [MIX] Карточка «Текущие задачи»: каркас AI,
+             [MAN] вручную переписан рендер — saveReportDraft /
+                   restoreReportDraft вокруг перезаписи innerHTML,
+                   иначе форма отчёта стиралась каждые 5 сек. -->
+        <div class="card">
+            <h3>Текущие задачи</h3>
+            <div id="taskList">
+                <div class="empty-state">
+                    <i class="fas fa-check-circle" style="color:#16a34a;"></i>
+                    <p>Нет активных задач</p>
+                    <span style="font-size:13px;">Вы свободны для новых назначений</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- [AI] Карта -->
+        <div class="card">
+            <h3>Карта маршрута</h3>
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+            <div id="routeInfo" style="font-size:14px;color:#4a5a6a;text-align:center;padding:8px;">
+                <span style="color:#8a9bb5;">Нет активного маршрута</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification-container" id="notificationContainer"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        /* ============================================================
+           InTrAvia Dispatch — Кабинет инженера
+           ============================================================
+           Ключевые моменты (ручная доработка поверх каркаса AI):
+           - blockReloadUntil — на 5 сек блокирует loadTasks/loadRequest
+             после отказа. Без этого опрос каждые 5 сек мгновенно
+             затирал экран «Нет задач» и нотификацию.
+           - saveReportDraft / restoreReportDraft — сохраняем введённое
+             в форму отчёта перед перезаписью taskList.innerHTML.
+           - Сброс маршрута с карты, когда инженер стал free —
+             нейросеть оставляла «висящие» маршруты после завершения.
+           - Модалка причины отмены с быстрыми кнопками —
+             AI предлагала стандартный prompt().
+           ============================================================ */
+        (function() {
+            // [AI] Состояние — типовой каркас
+            var engineerData = null;
+            var engineerId = null;
+            var map = null;
+            var mapInitialized = false;
+            var currentRoute = null;
+            var routeMarkers = {};
+            var taskData = null;
+            var taskStep = 'idle';
+            var lastRequestId = null;
+            var diagnoseStartedAt = null;
+            var diagnoseTimerInterval = null;
+
+            // [MAN] Ключевой предохранитель: после отказа от задачи
+            // опрос /api/engineers на 5 сек перестаёт перезаписывать UI.
+            // Без этого блокировка не работала: следующий тик опроса
+            // стирал «Нет задач» и нотификацию раньше, чем их успевали
+            // прочитать.
+            var blockReloadUntil = 0;
+
+            // [AI] Координаты стоянок — сгенерировано нейросетью
+            var MAP_POINTS = {
+                '101': { lat: 55.9807, lng: 37.4171 }, '102': { lat: 55.9806, lng: 37.4171 },
+                '103': { lat: 55.9801, lng: 37.4173 }, '104': { lat: 55.9800, lng: 37.4174 },
+                '105': { lat: 55.9808, lng: 37.4163 }, '106': { lat: 55.9807, lng: 37.4164 },
+                '107': { lat: 55.9804, lng: 37.4172 }, '108': { lat: 55.9803, lng: 37.4173 },
+                '109': { lat: 55.9801, lng: 37.4166 }, '110': { lat: 55.9800, lng: 37.4167 },
+                '111': { lat: 55.9797, lng: 37.4175 }, '112': { lat: 55.9796, lng: 37.4176 },
+                '113': { lat: 55.9794, lng: 37.4170 }, '114': { lat: 55.9793, lng: 37.4170 },
+                '115': { lat: 55.9790, lng: 37.4179 }, '116': { lat: 55.9789, lng: 37.4179 },
+                '117': { lat: 55.9785, lng: 37.4183 }, '118': { lat: 55.9782, lng: 37.4176 },
+                '119': { lat: 55.9783, lng: 37.4172 }, '120': { lat: 55.9784, lng: 37.4172 },
+                '121': { lat: 55.9785, lng: 37.4171 }, '122': { lat: 55.9783, lng: 37.4181 },
+                '124': { lat: 55.9799, lng: 37.4095 }, '125': { lat: 55.9797, lng: 37.4097 },
+                '126': { lat: 55.9796, lng: 37.4113 }, '127': { lat: 55.9796, lng: 37.4115 },
+                '128': { lat: 55.9792, lng: 37.4100 }, '129': { lat: 55.9790, lng: 37.4102 },
+                '130': { lat: 55.9796, lng: 37.4111 }, '131': { lat: 55.9791, lng: 37.4111 },
+                '132': { lat: 55.9790, lng: 37.4112 }, '134': { lat: 55.9789, lng: 37.4115 },
+                '135': { lat: 55.9788, lng: 37.4116 }, '136': { lat: 55.9784, lng: 37.4105 },
+                '137': { lat: 55.9782, lng: 37.4106 }, '138': { lat: 55.9781, lng: 37.4118 },
+                '139': { lat: 55.9780, lng: 37.4120 }, '140': { lat: 55.9775, lng: 37.4125 },
+                '141': { lat: 55.9771, lng: 37.4119 }, '142': { lat: 55.9771, lng: 37.4110 },
+                '143': { lat: 55.9772, lng: 37.4104 }, '144': { lat: 55.9774, lng: 37.4103 },
+                '145': { lat: 55.9774, lng: 37.4121 }, '146': { lat: 55.9772, lng: 37.4121 },
+                '11': { lat: 55.9624, lng: 37.4013 }, '12': { lat: 55.9624, lng: 37.4004 },
+                '13': { lat: 55.9625, lng: 37.4017 }, '14': { lat: 55.9627, lng: 37.4027 },
+                '15': { lat: 55.9627, lng: 37.4030 }, '16': { lat: 55.9630, lng: 37.4043 },
+                '17': { lat: 55.9632, lng: 37.4047 }, '19': { lat: 55.9643, lng: 37.4047 },
+                '20': { lat: 55.9645, lng: 37.4046 }, '21': { lat: 55.9650, lng: 37.4043 },
+                '22': { lat: 55.9652, lng: 37.4042 }, '23': { lat: 55.9655, lng: 37.4043 },
+                '24': { lat: 55.9656, lng: 37.4046 }, '25': { lat: 55.9656, lng: 37.4050 },
+                '26': { lat: 55.9650, lng: 37.4055 }, '27': { lat: 55.9648, lng: 37.4056 },
+                '28': { lat: 55.9642, lng: 37.4058 }, '29': { lat: 55.9640, lng: 37.4060 },
+                '30': { lat: 55.9635, lng: 37.4074 }, '31': { lat: 55.9636, lng: 37.4087 },
+                '32': { lat: 55.9636, lng: 37.4092 }, '33': { lat: 55.9637, lng: 37.4107 },
+                '34': { lat: 55.9638, lng: 37.4108 }, '35': { lat: 55.9639, lng: 37.4118 },
+                '36': { lat: 55.9644, lng: 37.4128 }, '37': { lat: 55.9644, lng: 37.4128 },
+                '38': { lat: 55.9648, lng: 37.4130 }, '39': { lat: 55.9652, lng: 37.4132 },
+                '40': { lat: 55.9656, lng: 37.4134 }, '41': { lat: 55.9659, lng: 37.4135 },
+                '46': { lat: 55.9664, lng: 37.4134 }, '47': { lat: 55.9667, lng: 37.4135 },
+                '48': { lat: 55.9669, lng: 37.4137 }, '49': { lat: 55.9669, lng: 37.4138 },
+                '50': { lat: 55.9670, lng: 37.4146 }, '51': { lat: 55.9671, lng: 37.4155 },
+                '52': { lat: 55.9672, lng: 37.4163 }, '53': { lat: 55.9674, lng: 37.4171 },
+                '54': { lat: 55.9674, lng: 37.4172 }, '55': { lat: 55.9671, lng: 37.4180 },
+                '57': { lat: 55.9669, lng: 37.4181 }, '58': { lat: 55.9668, lng: 37.4181 },
+                '59': { lat: 55.9664, lng: 37.4179 }, '60': { lat: 55.9661, lng: 37.4175 }
+            };
+
+            // [AI] Проверка сессии — типовой каркас
+            var session = sessionStorage.getItem('userSession');
+            if (!session) { window.location.href = '/login.html'; return; }
+
+            var user;
+            try {
+                user = JSON.parse(session);
+                if (user.role !== 'engineer') { window.location.href = '/login.html'; return; }
+                engineerId = user.id || 'eng_1';
+            } catch (_) { window.location.href = '/login.html'; return; }
+
+            document.getElementById('userName').textContent = user.name || 'Инженер';
+            document.getElementById('userAvatar').textContent = user.avatar || '🔧';
+            document.getElementById('userRole').textContent = 'Инженер ОТО';
+            document.getElementById('userSpec').textContent = 'Специализация: ' + (user.specialization || 'Двигатели');
+            document.getElementById('profileName').textContent = user.name || 'Инженер';
+            document.getElementById('profileSpec').textContent = 'Специализация: ' + (user.specialization || 'Двигатели');
+
+            // [AI] Дата в шапке
+            var now = new Date();
+            var months = ['января','февраля','марта','апреля','мая','июня',
+                'июля','августа','сентября','октября','ноября','декабря'];
+            document.getElementById('currentDate').textContent =
+                now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+
+            // [AI] Карта Leaflet — типовой каркас
+            function initMap() {
+                if (mapInitialized) return;
+                map = L.map('map', {
+                    center: [55.981349, 37.388359], zoom: 13,
+                    zoomControl: true, attributionControl: false
+                });
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+                mapInitialized = true;
+            }
+
+            // ============================================================
+            // [MIX] Нотификации: каркас AI, звук — вручную.
+            // Инженер может не смотреть в экран, когда приходит задача.
+            // ============================================================
+            function showNotification(title, text) {
+                var container = document.getElementById('notificationContainer');
+                var notif = document.createElement('div');
+                notif.className = 'notification';
+                notif.innerHTML =
+                    '<div class="notif-title">' + title + '</div>' +
+                    '<div class="notif-text">' + text + '</div>' +
+                    '<div class="notif-time">' + new Date().toLocaleTimeString() + '</div>';
+                container.appendChild(notif);
+
+                // [MAN] Короткий звуковой сигнал (WebAudio) — вручную
+                try {
+                    var audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+                    var osc = audioCtx.createOscillator();
+                    var gain = audioCtx.createGain();
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.frequency.value = 800; osc.type = 'sine'; gain.gain.value = 0.1;
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+                } catch (_) {}
+
+                setTimeout(function() {
+                    notif.style.opacity = '0'; notif.style.transition = 'opacity 0.3s';
+                    setTimeout(function() { notif.remove(); }, 300);
+                }, 5000);
+            }
+
+            // [AI] Тосты
+            function showToast(message, type) {
+                var existing = document.querySelector('.toast');
+                if (existing) existing.remove();
+                var toast = document.createElement('div');
+                toast.className = 'toast ' + (type || '');
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                setTimeout(function() {
+                    toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s';
+                    setTimeout(function() { toast.remove(); }, 300);
+                }, 3000);
+            }
+
+            // ============================================================
+            // [MAN] Парсинг ROUTE:… из engineer_comment — вручную.
+            // AI-каркас ожидала «чистый» JSON, но диспетчерская
+            // склеивает ROUTE + произвольный текст. Парсим только
+            // первую сбалансированную {...}-скобку.
+            // ============================================================
+            function parseRouteFromComment(comment) {
+                if (!comment || comment.indexOf('ROUTE:') !== 0) return null;
+                try {
+                    var rest = comment.substring(6);
+                    var depth = 0, endIdx = -1;
+                    for (var i = 0; i < rest.length; i++) {
+                        if (rest[i] === '{') depth++;
+                        else if (rest[i] === '}') { depth--; if (depth === 0) { endIdx = i + 1; break; } }
+                    }
+                    if (endIdx <= 0) return null;
+                    var parsed = JSON.parse(rest.substring(0, endIdx));
+                    return {
+                        from: { lat: parsed.flat, lng: parsed.flng },
+                        to: { lat: parsed.tlat, lng: parsed.tlng },
+                        time: parsed.tt || 0,
+                        usingCar: parsed.uc === true,
+                        walkToCar: parsed.wc || 0,
+                        bestCarTime: parsed.ct || 0,
+                        bestCarLat: parsed.bclat,
+                        bestCarLng: parsed.bclng,
+                        bestCar: parsed.bc ? { deviceId: parsed.bc } : null,
+                        parkingId: parsed.pid
+                    };
+                } catch (e) { console.warn('Не удалось распарсить ROUTE:', e); return null; }
+            }
+
+            // ============================================================
+            // [MIX] Отрисовка маршрута: каркас AI,
+            // [MAN] при null — принудительно чистим карту и info-панель
+            //       (AI-версия оставляла «висящий» маршрут).
+            // ============================================================
+            function drawRouteOnMap(routeData) {
+                if (!mapInitialized) initMap();
+                for (var key in routeMarkers) {
+                    try { map.removeLayer(routeMarkers[key]); } catch(e) {}
+                }
+                routeMarkers = {};
+
+                if (!routeData || !routeData.from || !routeData.to) {
+                    map.setView([55.981349, 37.388359], 13);
+                    document.getElementById('routeInfo').innerHTML =
+                        '<span style="color:#8a9bb5;">Нет активного маршрута</span>';
+                    return;
+                }
+
+                var latlngs;
+                if (routeData.usingCar && routeData.bestCarLat != null && routeData.bestCarLng != null) {
+                    latlngs = [
+                        [routeData.from.lat, routeData.from.lng],
+                        [routeData.bestCarLat, routeData.bestCarLng],
+                        [routeData.to.lat, routeData.to.lng]
+                    ];
+                } else {
+                    latlngs = [[routeData.from.lat, routeData.from.lng], [routeData.to.lat, routeData.to.lng]];
+                }
+
+                var polyline = L.polyline(latlngs, { color: '#003366', weight: 4, dashArray: '8, 6', opacity: 0.85 }).addTo(map);
+                routeMarkers['polyline'] = polyline;
+
+                var startIcon = L.divIcon({
+                    className: 'employee-marker',
+                    html: '<div style="background:#2ecc71;width:30px;height:30px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">Я</div>',
+                    iconSize: [30, 30], iconAnchor: [15, 15]
+                });
+                routeMarkers['start'] = L.marker([routeData.from.lat, routeData.from.lng], { icon: startIcon })
+                    .addTo(map).bindPopup('Ваше текущее положение');
+
+                if (routeData.usingCar && routeData.bestCarLat != null && routeData.bestCarLng != null) {
+                    var carIcon = L.divIcon({
+                        className: 'car-marker',
+                        html: '<div style="background:#f39c12;width:32px;height:32px;border-radius:6px;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;">🚗</div>',
+                        iconSize: [32, 32], iconAnchor: [16, 16]
+                    });
+                    routeMarkers['car'] = L.marker([routeData.bestCarLat, routeData.bestCarLng], { icon: carIcon })
+                        .addTo(map).bindPopup('Спецтранспорт ' + (routeData.bestCar ? routeData.bestCar.deviceId : ''));
+                }
+
+                var endIcon = L.divIcon({
+                    className: 'parking-marker',
+                    html: '<div style="background:#003366;width:34px;height:34px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;">✈</div>',
+                    iconSize: [34, 34], iconAnchor: [17, 17]
+                });
+                routeMarkers['end'] = L.marker([routeData.to.lat, routeData.to.lng], { icon: endIcon })
+                    .addTo(map).bindPopup('Стоянка ' + (routeData.parkingId || ''));
+
+                var bounds = L.latLngBounds(latlngs);
+                map.fitBounds(bounds, { padding: [60, 60] });
+
+                var routeInfo = document.getElementById('routeInfo');
+                if (routeData.usingCar && routeData.bestCar) {
+                    routeInfo.innerHTML =
+                        '<strong style="color:#003366;">⏱ ' + routeData.time + ' мин</strong>' +
+                        '<br><span style="font-size:13px;color:#6a7a8a;">' +
+                        '🚶 ' + routeData.walkToCar + ' мин пешком до ' + routeData.bestCar.deviceId +
+                        ' + 🚗 ' + routeData.bestCarTime + ' мин на машине</span>';
+                } else if (routeData.usingCar) {
+                    routeInfo.innerHTML =
+                        '<strong style="color:#003366;">⏱ ' + routeData.time + ' мин</strong>' +
+                        '<br><span style="font-size:13px;color:#6a7a8a;">🚗 на спецтранспорте</span>';
+                } else {
+                    routeInfo.innerHTML =
+                        '<strong style="color:#003366;">⏱ ' + routeData.time + ' мин</strong>' +
+                        '<br><span style="font-size:13px;color:#6a7a8a;">🚶 пешком</span>';
+                }
+            }
+
+            // ============================================================
+            // [MAN] Сохранение и восстановление черновика формы отчёта.
+            // AI каждые 5 сек перезаписывала taskList.innerHTML и стирала
+            // введённые данные. Сохраняем перед рендером, восстанавливаем
+            // после.
+            // ============================================================
+            function saveReportDraft() {
+                var form = document.querySelector('.report-form');
+                if (!form) return null;
+                var g = function(id) {
+                    var el = document.getElementById(id);
+                    return el ? el.value : undefined;
+                };
+                var chk = function(id) {
+                    var el = document.getElementById(id);
+                    return el ? el.checked : undefined;
+                };
+                return {
+                    condition: g('reportCondition'),
+                    category: g('reportCategory'),
+                    findings: g('reportFindings'),
+                    actions: g('reportActions'),
+                    duration: g('reportDuration'),
+                    materials: g('reportMaterials'),
+                    needParts: chk('reportNeedParts'),
+                    comment: g('reportComment')
+                };
+            }
+
+            function restoreReportDraft(draft) {
+                if (!draft) return;
+                var set = function(id, val) {
+                    var el = document.getElementById(id);
+                    if (el && val !== undefined) el.value = val;
+                };
+                var setChk = function(id, val) {
+                    var el = document.getElementById(id);
+                    if (el && val !== undefined) el.checked = val;
+                };
+                set('reportCondition', draft.condition);
+                set('reportCategory', draft.category);
+                set('reportFindings', draft.findings);
+                set('reportActions', draft.actions);
+                set('reportDuration', draft.duration);
+                set('reportMaterials', draft.materials);
+                setChk('reportNeedParts', draft.needParts);
+                set('reportComment', draft.comment);
+            }
+
+            function isReportFormOpen() {
+                return !!document.querySelector('.report-form');
+            }
+
+            // ============================================================
+            // [MIX] loadTasks — каркас AI, ручные правки:
+            //   - уважает blockReloadUntil (главный предохранитель);
+            //   - при isFree стирает маршрут и всё состояние;
+            //   - не дёргает форму, если taskStep === 'diagnosing'.
+            // ============================================================
+            function loadTasks() {
+                // [MAN] Главный предохранитель — не дёргаем UI 5 сек
+                // после отказа от задачи.
+                if (Date.now() < blockReloadUntil) {
+                    console.log('[ENG] loadTasks заблокирован');
+                    return;
+                }
+                fetch('/api/engineers')
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        var eng = null;
+                        for (var i = 0; i < data.length; i++) {
+                            if (data[i].id === engineerId) { eng = data[i]; break; }
+                        }
+                        if (!eng) return;
+
+                        // [MAN] Если пишем отчёт — не сбиваем форму
+                        if (taskStep === 'diagnosing' && isReportFormOpen()) {
+                            engineerData = eng;
+                            var badge0 = document.getElementById('statusBadge');
+                            if (badge0 && eng.status) {
+                                var sm0 = {
+                                    'working': { label: 'Работает', class: 'working' },
+                                    'busy': { label: 'Занят', class: 'busy' },
+                                    'free': { label: 'Свободен', class: 'free' }
+                                };
+                                var st0 = sm0[eng.status] || sm0.free;
+                                badge0.textContent = st0.label;
+                                badge0.className = 'status-badge ' + st0.class;
+                            }
+                            return;
+                        }
+
+                        // [MAN] КЛЮЧЕВОЕ: если инженер свободен или без
+                        // задачи — УДАЛЯЕМ маршрут. AI оставляла
+                        // «висящий» маршрут после завершения задачи.
+                        var isFree = (eng.status === 'free' || eng.status === 'offline') || !eng.task;
+                        if (isFree && taskStep !== 'idle' && taskStep !== 'completed') {
+                            console.log('[ENG] Свободен — стираю маршрут');
+                            if (diagnoseTimerInterval) clearInterval(diagnoseTimerInterval);
+                            diagnoseTimerInterval = null;
+                            diagnoseStartedAt = null;
+                            taskStep = 'idle';
+                            taskData = null;
+                            currentRoute = null;
+                            lastRequestId = null;
+                            drawRouteOnMap(null);
+                        }
+
+                        // [MAN] Дополнительная страховка
+                        if (isFree && (currentRoute || Object.keys(routeMarkers).length > 0)) {
+                            currentRoute = null;
+                            drawRouteOnMap(null);
+                        }
+
+                        // [AI] Уведомление о новой задаче
+                        var oldTask = engineerData ? engineerData.task : null;
+                        var newTask = eng.task;
+                        if (newTask && newTask !== oldTask) {
+                            showNotification('Новая задача', 'Вам назначена задача: ' + newTask);
+                            taskStep = 'accepted';
+                        }
+                        engineerData = eng;
+                        updateUI(eng);
+
+                        // [MAN] Если задача пустая — точно стираем маршрут
+                        if ((eng.status === 'free' || !eng.task) &&
+                            (currentRoute || Object.keys(routeMarkers).length > 0)) {
+                            currentRoute = null;
+                            drawRouteOnMap(null);
+                            taskStep = 'idle';
+                            taskData = null;
+                        }
+
+                        loadRequestDetails();
+                    })
+                    .catch(function(err) { console.warn('[ENG]', err); });
+            }
+
+            // ============================================================
+            // [MIX] loadRequestDetails — каркас AI, ручные правки:
+            //   - уважает blockReloadUntil;
+            //   - не трогает форму при активной диагностике;
+            //   - fallback-маршрут при отсутствии ROUTE-префикса.
+            // ============================================================
+            function loadRequestDetails() {
+                if (Date.now() < blockReloadUntil) {
+                    console.log('[ENG] loadRequestDetails заблокирован');
+                    return;
+                }
+                if (!engineerData || !engineerData.task) {
+                    taskData = null;
+                    currentRoute = null;
+                    lastRequestId = null;
+                    drawRouteOnMap(null);
+                    return;
+                }
+                if (taskStep === 'diagnosing' && isReportFormOpen()) return;
+
+                fetch('/api/requests')
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        var request = null;
+                        for (var i = 0; i < data.length; i++) {
+                            if (data[i].engineer_id === engineerId &&
+                                data[i].status !== 'completed' &&
+                                data[i].status !== 'cancelled' &&
+                                data[i].status !== 'flight_cancelled') {
+                                request = data[i]; break;
+                            }
+                        }
+                        if (!request) {
+                            if (taskStep !== 'idle') {
+                                if (diagnoseTimerInterval) clearInterval(diagnoseTimerInterval);
+                                diagnoseTimerInterval = null;
+                                diagnoseStartedAt = null;
+                                taskStep = 'idle';
+                                taskData = null;
+                                currentRoute = null;
+                                drawRouteOnMap(null);
+                            }
+                            drawRouteOnMap(null);
+                            return;
+                        }
+
+                        taskData = request;
+                        if (lastRequestId !== request.id) {
+                            lastRequestId = request.id;
+                            if (taskStep === 'idle' || taskStep === 'completed') {
+                                taskStep = 'accepted';
+                            }
+                        }
+
+                        // [MAN] Fallback: если ROUTE-префикса нет,
+                        // строим пеший маршрут по координатам стоянки.
+                        var routeData = parseRouteFromComment(request.engineer_comment);
+                        if (!routeData) {
+                            var parkingCoords = MAP_POINTS[request.parking_id];
+                            if (parkingCoords) {
+                                routeData = {
+                                    from: { lat: engineerData.coords_lat || 55.975, lng: engineerData.coords_lng || 37.410 },
+                                    to: { lat: parkingCoords.lat, lng: parkingCoords.lng },
+                                    time: request.travel_time || 0,
+                                    usingCar: false, walkToCar: 0, bestCarTime: 0,
+                                    bestCarLat: null, bestCarLng: null,
+                                    bestCar: null, parkingId: request.parking_id
+                                };
+                            }
+                        }
+                        currentRoute = routeData;
+                        drawRouteOnMap(routeData);
+                        updateTaskWithRoute(request);
+                    })
+                    .catch(function(err) { console.error('Ошибка загрузки заявок:', err); });
+            }
+
+            // [AI] Шаги прогресса — типовой каркас
+            function renderSteps() {
+                var steps = [
+                    { key: 'accepted', label: 'Принята' },
+                    { key: 'in_car', label: 'В спецтранспорте' },
+                    { key: 'arrived', label: 'На месте' },
+                    { key: 'diagnosing', label: 'Диагностика' },
+                    { key: 'completed', label: 'Завершено' }
+                ];
+                var order = ['accepted', 'in_car', 'arrived', 'diagnosing', 'completed'];
+                var currentIdx = order.indexOf(taskStep);
+                var skipCar = currentRoute && !currentRoute.usingCar;
+
+                var html = '<div class="steps-progress">';
+                var displaySteps = [];
+                for (var i = 0; i < steps.length; i++) {
+                    if (skipCar && steps[i].key === 'in_car') continue;
+                    displaySteps.push(steps[i]);
+                }
+
+                for (var i = 0; i < displaySteps.length; i++) {
+                    var s = displaySteps[i];
+                    var cls = 'step-item';
+                    var idx = order.indexOf(s.key);
+                    if (idx < currentIdx) cls += ' done';
+                    else if (idx === currentIdx) cls += ' active';
+
+                    var icon = idx < currentIdx ? '✓' : (i + 1);
+                    html += '<div class="' + cls + '">' +
+                            '<div class="step-num">' + icon + '</div>' +
+                            '<span>' + s.label + '</span>' +
+                            '</div>';
+
+                    if (i < displaySteps.length - 1) {
+                        var nextIdx = order.indexOf(displaySteps[i + 1].key);
+                        var connCls = 'step-connector' + (nextIdx <= currentIdx ? ' done' : '');
+                        html += '<div class="' + connCls + '"></div>';
+                    }
+                }
+                html += '</div>';
+                return html;
+            }
+
+            // ============================================================
+            // [MIX] updateTaskWithRoute — каркас AI, ручные правки:
+            //   - уважает blockReloadUntil;
+            //   - saveReportDraft / restoreReportDraft вокруг
+            //     перезаписи taskList.innerHTML — иначе форма отчёта
+            //     стиралась каждые 5 сек.
+            // ============================================================
+            function updateTaskWithRoute(request) {
+                if (Date.now() < blockReloadUntil) {
+                    console.log('[ENG] updateTaskWithRoute заблокирован');
+                    return;
+                }
+                var taskList = document.getElementById('taskList');
+                var statusMap = {
+                    'free': { label: 'Свободен', class: 'free' },
+                    'busy': { label: 'Занят', class: 'busy' },
+                    'arriving': { label: 'В пути', class: 'arriving' },
+                    'pending': { label: 'Ожидает', class: 'pending' },
+                    'working': { label: 'Работает', class: 'working' }
+                };
+                var status = statusMap[engineerData.status] || statusMap.free;
+
+                var routeText = '';
+                if (currentRoute) {
+                    if (currentRoute.usingCar && currentRoute.bestCar) {
+                        routeText = '🚶 ' + currentRoute.walkToCar + ' мин + 🚗 ' +
+                                    currentRoute.bestCarTime + ' мин = ⏱ ' + currentRoute.time + ' мин';
+                    } else {
+                        routeText = '🚶 ' + currentRoute.time + ' мин пешком';
+                    }
+                }
+
+                var faultName = request.fault_type ? request.fault_type.replace(/_/g, ' ') : 'Неизвестная';
+
+                if (taskStep === 'idle') {
+                    if (engineerData.status === 'pending' || engineerData.status === 'arriving') taskStep = 'accepted';
+                    else if (engineerData.status === 'busy') taskStep = currentRoute && currentRoute.usingCar ? 'in_car' : 'arrived';
+                    else if (engineerData.status === 'working') taskStep = 'diagnosing';
+                    else taskStep = 'accepted';
+                }
+
+                // [MAN] Если пишем отчёт — обновляем только progress-шаги,
+                // чтобы не сбить ввод.
+                if (taskStep === 'diagnosing' && isReportFormOpen()) {
+                    var progressEl = taskList.querySelector('.steps-progress');
+                    if (progressEl) {
+                        progressEl.outerHTML = renderSteps();
+                    }
+                    return;
+                }
+
+                var actionsHtml = '';
+                if (taskStep === 'accepted') {
+                    if (currentRoute && currentRoute.usingCar) {
+                        actionsHtml =
+                            '<button class="btn btn-primary" onclick="stepInCar()"><i class="fas fa-car"></i> Сел в спецтранспорт</button>' +
+                            '<button class="btn btn-danger" onclick="rejectTask(\'' + request.id + '\')"><i class="fas fa-times"></i> Отклонить</button>';
+                    } else {
+                        actionsHtml =
+                            '<button class="btn btn-primary" onclick="stepArrived()"><i class="fas fa-map-marker-alt"></i> Я на месте</button>' +
+                            '<button class="btn btn-danger" onclick="rejectTask(\'' + request.id + '\')"><i class="fas fa-times"></i> Отклонить</button>';
+                    }
+                } else if (taskStep === 'in_car') {
+                    actionsHtml = '<button class="btn btn-primary" onclick="stepArrived()"><i class="fas fa-map-marker-alt"></i> Я на месте</button>';
+                } else if (taskStep === 'arrived') {
+                    actionsHtml = '<button class="btn btn-warning" onclick="stepStartDiagnostics()"><i class="fas fa-search"></i> Начать диагностику</button>';
+                } else if (taskStep === 'diagnosing') {
+                    actionsHtml = renderReportForm();
+                } else if (taskStep === 'completed') {
+                    actionsHtml = '<div style="color:#16a34a;font-weight:600;">✅ Задача завершена</div>';
+                }
+
+                // [MAN] Сохраняем черновик формы ДО перезаписи innerHTML
+                var draft = saveReportDraft();
+
+                taskList.innerHTML =
+                    '<div class="task-item">' +
+                    renderSteps() +
+                    '<div>' +
+                    '<div class="task-title">✈ ' + (request.aircraft || 'ВС') + ' — ' + faultName + '</div>' +
+                    '<div class="task-detail">📍 Стоянка: ' + (request.parking_id || '—') + ' • Статус: ' + status.label + '</div>' +
+                    '<div class="task-route">' +
+                    '<span class="route-icon">🗺️</span>' +
+                    '<span>' + routeText + '</span>' +
+                    '</div>' +
+                    '</div>' +
+                    '<div class="task-actions">' + actionsHtml + '</div>' +
+                    '</div>';
+
+                // [MAN] Восстанавливаем введённое в форму
+                restoreReportDraft(draft);
+            }
+
+            // [MIX] Форма отчёта: каркас AI, ручной таймер диагностики
+            function renderReportForm() {
+                var elapsedMin = diagnoseStartedAt
+                    ? Math.floor((Date.now() - diagnoseStartedAt) / 60000)
+                    : 0;
+                var defaultDuration = diagnoseStartedAt
+                    ? Math.max(1, Math.round((Date.now() - diagnoseStartedAt) / 60000))
+                    : 30;
+
+                return '<div class="report-form" style="width:100%;">' +
+                    '<h4><i class="fas fa-clipboard-list"></i> Отчёт о диагностике</h4>' +
+                    '<div id="diagnoseTimer" style="background:#eff6ff;border:1px solid #bfdbfe;color:#003366;padding:10px 14px;border-radius:10px;font-weight:600;font-size:14px;margin-bottom:16px;text-align:center;">' +
+                        '⏱ Идёт диагностика: ' + elapsedMin + ' мин' +
+                    '</div>' +
+                    '<div class="form-row">' +
+                        '<div class="form-group"><label>Состояние ВС</label>' +
+                        '<select id="reportCondition">' +
+                            '<option value="repaired">✅ Устранено на месте</option>' +
+                            '<option value="needs_parts">🔧 Требуется замена деталей</option>' +
+                            '<option value="needs_service">🏭 Требуется заводской ремонт</option>' +
+                            '<option value="no_fault">✔️ Неисправность не подтверждена</option>' +
+                        '</select></div>' +
+                        '<div class="form-group"><label>Категория неисправности</label>' +
+                        '<select id="reportCategory">' +
+                            '<option value="engine">Двигатель</option>' +
+                            '<option value="avionics">Авионика</option>' +
+                            '<option value="hydraulics">Гидравлика</option>' +
+                            '<option value="electrical">Электрика</option>' +
+                            '<option value="mechanical">Механика</option>' +
+                            '<option value="other">Другое</option>' +
+                        '</select></div>' +
+                    '</div>' +
+                    '<div class="form-group"><label>Что обнаружено *</label>' +
+                    '<textarea id="reportFindings" placeholder="Опишите результаты диагностики..." style="min-height:140px;"></textarea></div>' +
+                    '<div class="form-group"><label>Выполненные работы</label>' +
+                    '<textarea id="reportActions" placeholder="Что было сделано..." style="min-height:100px;"></textarea></div>' +
+                    '<div class="form-row">' +
+                        '<div class="form-group"><label>Время диагностики (мин)</label>' +
+                        '<input type="number" id="reportDuration" value="' + defaultDuration + '" min="1" max="480"></div>' +
+                        '<div class="form-group"><label>Материалы</label>' +
+                        '<input type="text" id="reportMaterials" placeholder="Например: масло, фильтр"></div>' +
+                    '</div>' +
+                    '<div class="checkbox-group">' +
+                        '<input type="checkbox" id="reportNeedParts">' +
+                        '<label for="reportNeedParts">Требуются дополнительные детали</label>' +
+                    '</div>' +
+                    '<div class="form-group"><label>Комментарий</label>' +
+                    '<textarea id="reportComment" placeholder="Дополнительная информация..." style="min-height:80px;"></textarea></div>' +
+                    '<div class="task-actions" style="margin-top:16px;">' +
+                        '<button class="btn btn-success" onclick="submitReport()"><i class="fas fa-paper-plane"></i> Завершить и отправить отчёт</button>' +
+                    '</div>' +
+                '</div>';
+            }
+
+            // [MAN] Локальное освобождение инженера — вручную
+            function releaseEngineerLocal() {
+                if (diagnoseTimerInterval) {
+                    clearInterval(diagnoseTimerInterval);
+                    diagnoseTimerInterval = null;
+                }
+                diagnoseStartedAt = null;
+                taskStep = 'idle';
+                taskData = null;
+                currentRoute = null;
+                lastRequestId = null;
+
+                if (engineerData) {
+                    engineerData.status = 'free';
+                    engineerData.task = null;
+                }
+
+                drawRouteOnMap(null);
+
+                var badge = document.getElementById('statusBadge');
+                if (badge) {
+                    badge.textContent = 'Свободен';
+                    badge.className = 'status-badge free';
+                }
+                var taskList = document.getElementById('taskList');
+                if (taskList) {
+                    taskList.innerHTML =
+                        '<div class="empty-state">' +
+                        '<i class="fas fa-check-circle" style="color:#16a34a;"></i>' +
+                        '<p>Нет активных задач</p>' +
+                        '<span style="font-size:13px;">Вы свободны для новых назначений</span>' +
+                        '</div>';
+                }
+                var taskCount = document.getElementById('taskCount');
+                if (taskCount) taskCount.textContent = '0';
+            }
+
+            // [MAN] Принудительное освобождение через API — вручную
+            function forceReleaseEngineer() {
+                fetch('/api/complete/' + engineerId, { method: 'POST' })
+                    .then(function(res) { return res.json(); })
+                    .then(function() { releaseEngineerLocal(); })
+                    .catch(function(err) {
+                        console.error('Ошибка освобождения:', err);
+                        releaseEngineerLocal();
+                    });
+            }
+
+            // [AI] Пошаговые действия — типовой каркас
+            window.stepInCar = function() {
+                taskStep = 'in_car';
+                showToast('Вы сели в спецтранспорт', 'success');
+                if (taskData) updateTaskWithRoute(taskData);
+            };
+
+            window.stepArrived = function() {
+                taskStep = 'arrived';
+                showToast('Вы прибыли на место', 'success');
+                if (taskData) updateTaskWithRoute(taskData);
+            };
+
+            // [MIX] Старт диагностики: каркас AI,
+            // [MAN] таймер с минутами и секундами + переключение
+            //       статуса инженера в working.
+            window.stepStartDiagnostics = function() {
+                taskStep = 'diagnosing';
+                diagnoseStartedAt = Date.now();
+
+                if (diagnoseTimerInterval) clearInterval(diagnoseTimerInterval);
+                diagnoseTimerInterval = setInterval(function() {
+                    var el = document.getElementById('diagnoseTimer');
+                    if (!el) return;
+                    var elapsed = Math.floor((Date.now() - diagnoseStartedAt) / 1000);
+                    var min = Math.floor(elapsed / 60);
+                    var sec = elapsed % 60;
+                    el.textContent = '⏱ Идёт диагностика: ' + min + ' мин ' + (sec < 10 ? '0' : '') + sec + ' сек';
+                }, 1000);
+
+                if (engineerData) {
+                    fetch('/api/engineers/' + engineerId, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: engineerData.name,
+                            specialization: engineerData.specialization,
+                            status: 'working',
+                            task: engineerData.task,
+                            phone: engineerData.phone || ''
+                        })
+                    }).catch(function(err) { console.error(err); });
+                }
+                showToast('Диагностика начата', 'success');
+                if (taskData) updateTaskWithRoute(taskData);
+            };
+
+            // ============================================================
+            // [MIX] Отправка отчёта: каркас AI,
+            // [MAN] сохранение ROUTE-префикса в комментарии, парсинг
+            //       реального времени диагностики, обработка ошибок
+            //       через forceReleaseEngineer.
+            // ============================================================
+            window.submitReport = function() {
+                if (!taskData) { showToast('Нет активной задачи', 'error'); return; }
+
+                var condition = document.getElementById('reportCondition').value;
+                var category = document.getElementById('reportCategory').value;
+                var findings = document.getElementById('reportFindings').value.trim();
+                var actions = document.getElementById('reportActions').value.trim();
+                var durationInput = document.getElementById('reportDuration').value;
+                var duration = parseInt(durationInput, 10);
+                var materials = document.getElementById('reportMaterials').value.trim();
+                var needParts = document.getElementById('reportNeedParts').checked;
+                var comment = document.getElementById('reportComment').value.trim();
+
+                if (!findings) { showToast('Опишите, что обнаружено', 'error'); return; }
+                if (isNaN(duration) || duration < 1) { showToast('Укажите время диагностики', 'error'); return; }
+                if (duration > 480) { showToast('Максимум 480 мин', 'error'); return; }
+
+                if (diagnoseStartedAt) {
+                    var realElapsedMin = (Date.now() - diagnoseStartedAt) / 60000;
+                    if (realElapsedMin < 5) {
+                        if (!confirm('Вы проводили диагностику меньше 5 минут. Завершить?')) return;
+                    }
+                }
+
+                var realDurationMin = diagnoseStartedAt
+                    ? Math.round((Date.now() - diagnoseStartedAt) / 60000)
+                    : duration;
+
+                // [MAN] Сохраняем ROUTE-префикс — иначе диспетчерская
+                // потеряет маршрут из комментария.
+                var originalComment = taskData.engineer_comment || '';
+                var routePrefix = '';
+                if (originalComment.indexOf('ROUTE:') === 0) {
+                    var rest = originalComment.substring(6);
+                    var depth = 0, endIdx = -1;
+                    for (var i = 0; i < rest.length; i++) {
+                        if (rest[i] === '{') depth++;
+                        else if (rest[i] === '}') { depth--; if (depth === 0) { endIdx = i + 1; break; } }
+                    }
+                    if (endIdx > 0) routePrefix = 'ROUTE:' + rest.substring(0, endIdx) + '\n';
+                }
+
+                var conditionText = {
+                    'repaired': 'Устранено на месте',
+                    'needs_parts': 'Требуется замена деталей',
+                    'needs_service': 'Требуется заводской ремонт',
+                    'no_fault': 'Неисправность не подтверждена'
+                }[condition] || condition;
+
+                var categoryText = {
+                    'engine': 'Двигатель',
+                    'avionics': 'Авионика',
+                    'hydraulics': 'Гидравлика',
+                    'electrical': 'Электрика',
+                    'mechanical': 'Механика',
+                    'other': 'Другое'
+                }[category] || category;
+
+                var engineerName = (engineerData && engineerData.name) || 'Инженер';
+
+                var reportText =
+                    routePrefix +
+                    '📋 ОТЧЁТ О ДИАГНОСТИКЕ от ' + engineerName + '\n' +
+                    '──────────────────────────\n' +
+                    'Состояние ВС: ' + conditionText + '\n' +
+                    'Категория: ' + categoryText + '\n' +
+                    'Обнаружено: ' + findings + '\n' +
+                    'Выполненные работы: ' + (actions || '—') + '\n' +
+                    'Время диагностики: ' + duration + ' мин (реально: ' + realDurationMin + ' мин)\n' +
+                    'Материалы: ' + (materials || '—') + '\n' +
+                    'Нужны детали: ' + (needParts ? 'ДА' : 'нет') + '\n' +
+                    'Комментарий: ' + (comment || '—') + '\n' +
+                    '──────────────────────────';
+
+                fetch('/api/requests/' + taskData.id, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'completed',
+                        criticality: taskData.criticality || 'medium',
+                        engineer_comment: reportText
+                    })
+                })
+                .then(function(res) { return res.json(); })
+                .then(function() {
+                    return fetch('/api/complete/' + engineerId, { method: 'POST' });
+                })
+                .then(function() {
+                    taskStep = 'completed';
+                    showToast('Отчёт отправлен диспетчеру', 'success');
+                    showNotification('✅ Задача завершена', 'Отчёт отправлен. Ожидайте новое назначение.');
+                    drawRouteOnMap(null);
+                    currentRoute = null;
+                    releaseEngineerLocal();
+                    loadTasks();
+                })
+                .catch(function(err) {
+                    console.error(err);
+                    showToast('Ошибка отправки отчёта', 'error');
+                    forceReleaseEngineer();
+                });
+            };
+
+            // ============================================================
+            // [MAN] Отказ от задачи — полностью ручная механика:
+            //   - модалка с быстрыми кнопками вместо prompt();
+            //   - после отказа — 5 сек блокировка опроса (blockReloadUntil),
+            //     иначе следующий тик стирал «Нет задач» и нотификацию.
+            // ============================================================
+            window.rejectTask = function(requestId) {
+                openCancelModal(requestId);
+            };
+
+            function openCancelModal(requestId) {
+                var old = document.getElementById('cancelTaskModal');
+                if (old) old.remove();
+
+                var overlay = document.createElement('div');
+                overlay.id = 'cancelTaskModal';
+                overlay.style.cssText =
+                    'position:fixed;inset:0;background:rgba(0,0,0,0.45);' +
+                    'backdrop-filter:blur(4px);z-index:30000;' +
+                    'display:flex;align-items:center;justify-content:center;';
+
+                overlay.innerHTML =
+                    '<div style="background:#fff;border-radius:16px;padding:24px 28px;' +
+                                'max-width:460px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3);' +
+                                'font-family:Inter,sans-serif;">' +
+                        '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                                    'margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #e8ecf0;">' +
+                            '<h2 style="font-size:17px;font-weight:600;color:#003366;margin:0;">' +
+                                'Отмена задачи' +
+                            '</h2>' +
+                            '<button id="cancelModalClose" style="background:none;border:none;' +
+                                    'font-size:24px;color:#8a9bb5;cursor:pointer;line-height:1;">×</button>' +
+                        '</div>' +
+                        '<p style="font-size:13px;color:#4a5a6a;margin-bottom:12px;">' +
+                            'Укажите причину отмены. Она будет передана диспетчеру.' +
+                        '</p>' +
+                        '<div style="margin-bottom:12px;">' +
+                            '<label style="display:block;font-size:12px;font-weight:500;' +
+                                        'color:#4a5a6a;margin-bottom:6px;">Быстрый выбор</label>' +
+                            '<div id="cancelQuick" style="display:flex;flex-wrap:wrap;gap:6px;">' +
+                                '<button type="button" class="cancel-quick-btn" data-reason="Нет доступа к ВС">Нет доступа к ВС</button>' +
+                                '<button type="button" class="cancel-quick-btn" data-reason="Не моя специализация">Не моя специализация</button>' +
+                                '<button type="button" class="cancel-quick-btn" data-reason="Занят другой задачей">Занят другой задачей</button>' +
+                                '<button type="button" class="cancel-quick-btn" data-reason="Нет инструмента">Нет инструмента</button>' +
+                                '<button type="button" class="cancel-quick-btn" data-reason="Плохое самочувствие">Плохое самочувствие</button>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div style="margin-bottom:16px;">' +
+                            '<label style="display:block;font-size:12px;font-weight:500;' +
+                                        'color:#4a5a6a;margin-bottom:6px;">Причина *</label>' +
+                            '<textarea id="cancelReasonInput" rows="3" ' +
+                                'placeholder="Опишите причину отмены..." ' +
+                                'style="width:100%;padding:10px 12px;border:1px solid #d0d7e2;' +
+                                        'border-radius:10px;font-size:14px;font-family:inherit;' +
+                                        'resize:vertical;min-height:80px;"></textarea>' +
+                        '</div>' +
+                        '<div style="display:flex;gap:10px;">' +
+                            '<button id="cancelConfirmBtn" ' +
+                                'style="flex:1;padding:11px 18px;border:none;border-radius:10px;' +
+                                        'background:#dc2626;color:#fff;font-weight:600;font-size:14px;' +
+                                        'cursor:pointer;font-family:inherit;">' +
+                                'Отменить задачу' +
+                            '</button>' +
+                            '<button id="cancelDismissBtn" ' +
+                                'style="flex:1;padding:11px 18px;border:none;border-radius:10px;' +
+                                        'background:#e8ecf0;color:#4a5a6a;font-weight:600;font-size:14px;' +
+                                        'cursor:pointer;font-family:inherit;">' +
+                                'Вернуться' +
+                            '</button>' +
+                        '</div>' +
+                    '</div>';
+
+                document.body.appendChild(overlay);
+
+                var textarea = document.getElementById('cancelReasonInput');
+                var confirmBtn = document.getElementById('cancelConfirmBtn');
+                var dismissBtn = document.getElementById('cancelDismissBtn');
+                var closeBtn = document.getElementById('cancelModalClose');
+
+                // [MAN] Быстрые кнопки — вручную
+                var quickBtns = overlay.querySelectorAll('.cancel-quick-btn');
+                for (var i = 0; i < quickBtns.length; i++) {
+                    quickBtns[i].addEventListener('click', function() {
+                        textarea.value = this.getAttribute('data-reason');
+                        textarea.focus();
+                    });
+                }
+
+                function closeModal() {
+                    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                }
+
+                dismissBtn.addEventListener('click', closeModal);
+                closeBtn.addEventListener('click', closeModal);
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === overlay) closeModal();
+                });
+
+                confirmBtn.addEventListener('click', function() {
+                    var reason = (textarea.value || '').trim();
+                    if (!reason) {
+                        showToast('Укажите причину отмены', 'error');
+                        textarea.focus();
+                        return;
+                    }
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Отправка...';
+
+                    if (diagnoseTimerInterval) clearInterval(diagnoseTimerInterval);
+                    diagnoseTimerInterval = null;
+                    diagnoseStartedAt = null;
+
+                    fetch('/api/requests/' + requestId + '/cancel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            engineer_id: engineerId,
+                            reason: reason
+                        })
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(data) {
+                        if (!data || !data.success) {
+                            showToast((data && data.error) || 'Ошибка отмены', 'error');
+                            confirmBtn.disabled = false;
+                            confirmBtn.textContent = 'Отменить задачу';
+                            return;
+                        }
+
+                        closeModal();
+                        showToast('Задача отменена', 'warning');
+
+                        var notifText = 'Причина: ' + reason + '.';
+                        if (data.reassigned && data.selected && data.selected.engineer) {
+                            notifText += ' Новый инженер: ' +
+                                data.selected.engineer.name +
+                                ' (' + data.selected.engineer.device_id + '), ' +
+                                'в пути ' + data.selected.travel_time + ' мин.';
+                        } else if (data.queued) {
+                            notifText += ' Нет свободных — заявка в очереди.';
+                        } else {
+                            notifText += ' Ожидайте новое назначение.';
+                        }
+
+                        showNotification('❌ Задача отменена', notifText);
+
+                        // [MAN] === ЖЁСТКИЙ СБРОС ===
+                        // Ставим блокировку на 5 сек — иначе следующий
+                        // тик опроса мгновенно перезапишет «Нет задач»
+                        // и нотификацию.
+                        blockReloadUntil = Date.now() + 5000;
+
+                        taskStep = 'idle';
+                        taskData = null;
+                        currentRoute = null;
+                        lastRequestId = null;
+
+                        drawRouteOnMap(null);
+
+                        if (engineerData) {
+                            engineerData.status = 'free';
+                            engineerData.task = null;
+                        }
+
+                        var badge = document.getElementById('statusBadge');
+                        if (badge) {
+                            badge.textContent = 'Свободен';
+                            badge.className = 'status-badge free';
+                        }
+                        var taskList = document.getElementById('taskList');
+                        if (taskList) {
+                            taskList.innerHTML =
+                                '<div class="empty-state">' +
+                                '<i class="fas fa-check-circle" style="color:#16a34a;"></i>' +
+                                '<p>Нет активных задач</p>' +
+                                '<span style="font-size:13px;">Вы свободны для новых назначений</span>' +
+                                '</div>';
+                        }
+                        var taskCountEl = document.getElementById('taskCount');
+                        if (taskCountEl) taskCountEl.textContent = '0';
+
+                        // [MAN] Снимаем блокировку через 1.5 сек и опрашиваем
+                        setTimeout(function() {
+                            blockReloadUntil = 0;
+                            loadTasks();
+                        }, 1500);
+                    })
+                    .catch(function(err) {
+                        console.error(err);
+                        showToast('Ошибка соединения', 'error');
+                        confirmBtn.disabled = false;
+                        confirmBtn.textContent = 'Отменить задачу';
+                    });
+                });
+
+                setTimeout(function() { textarea.focus(); }, 50);
+            }
+
+            // ============================================================
+            // [AI] updateUI — каркас от нейросети
+            // ============================================================
+            function updateUI(eng) {
+                var statusMap = {
+                    'free': { label: 'Свободен', class: 'free' },
+                    'busy': { label: 'Занят', class: 'busy' },
+                    'arriving': { label: 'В пути', class: 'arriving' },
+                    'pending': { label: 'Ожидает', class: 'pending' },
+                    'working': { label: 'Работает', class: 'working' }
+                };
+                var status = statusMap[eng.status] || statusMap.free;
+                var badge = document.getElementById('statusBadge');
+                badge.textContent = status.label;
+                badge.className = 'status-badge ' + status.class;
+
+                var taskList = document.getElementById('taskList');
+                var count = document.getElementById('taskCount');
+
+                if (eng.task) {
+                    count.textContent = '1';
+                } else {
+                    count.textContent = '0';
+                    // [MAN] Не трогаем taskList, если открыта форма отчёта
+                    if (!isReportFormOpen()) {
+                        taskList.innerHTML =
+                            '<div class="empty-state">' +
+                            '<i class="fas fa-check-circle" style="color:#16a34a;"></i>' +
+                            '<p>Нет активных задач</p>' +
+                            '<span style="font-size:13px;">Вы свободны для новых назначений</span>' +
+                            '</div>';
+                    }
+                }
+
+                // [AI] Статистика из localStorage — каркас
+                var history = JSON.parse(localStorage.getItem('taskHistory') || '[]');
+                var today = new Date().toDateString();
+                var doneToday = 0;
+                for (var j = 0; j < history.length; j++) {
+                    if (history[j].completed && new Date(history[j].completed).toDateString() === today) doneToday++;
+                }
+                document.getElementById('doneToday').textContent = doneToday;
+
+                var completedTasks = history.filter(function(h) { return h.completed; });
+                if (completedTasks.length > 0) {
+                    var totalTime = 0;
+                    for (var k = 0; k < completedTasks.length; k++) {
+                        var assigned = new Date(completedTasks[k].assigned);
+                        var completed = new Date(completedTasks[k].completed_at);
+                        totalTime += (completed - assigned) / 60000;
+                    }
+                    document.getElementById('avgTime').textContent = Math.round(totalTime / completedTasks.length) + ' мин';
+                } else {
+                    document.getElementById('avgTime').textContent = '0 мин';
+                }
+            }
+
+            // [MAN] Logout — вручную: чистим таймер
+            window.logout = function() {
+                if (diagnoseTimerInterval) clearInterval(diagnoseTimerInterval);
+                sessionStorage.removeItem('userSession');
+                window.location.href = '/login.html';
+            };
+
+            // [AI] Экспорт функций — типовой каркас
+            window.showToast = showToast;
+
+            // [AI] Инициализация + опрос каждые 5 сек
+            document.addEventListener('DOMContentLoaded', function() {
+                initMap();
+                setTimeout(function() { if (map) map.invalidateSize(); }, 200);
+                loadTasks();
+                setInterval(loadTasks, 5000);
+            });
+        })();
+    </script>
+
+</body>
+</html>

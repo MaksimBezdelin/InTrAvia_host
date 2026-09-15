@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход — InTrAvia Dispatch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* =========================================================
+           InTrAvia Dispatch — Login
+           Дизайн-система: глубокий синий + золото + стекло
+           Часть стилей сгенерирована нейросетью (Claude),
+           финальная вёрстка, цвета и анимации доработаны вручную
+           ========================================================= */
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --aero-blue: #003366;
+            --aero-blue-dark: #001f4d;
+            --aero-blue-light: #1a5276;
+            --aero-blue-pale: #e8f0fe;
+            --aero-gold: #c9a84c;
+            --aero-gold-light: #e0c974;
+            --aero-red: #cc3333;
+            --aero-text: #1a2332;
+            --aero-text-light: #4a5a6a;
+            --aero-gray: #8a9bb5;
+            --aero-gray-light: #e8ecf0;
+            --shadow-soft: 0 4px 24px rgba(0, 51, 102, 0.06);
+            --shadow-strong: 0 20px 60px rgba(0, 51, 102, 0.18);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            overflow: hidden;
+            background: #0a1628;
+            position: relative;
+        }
+
+        /* =========================================================
+           Анимированный фон
+           ========================================================= */
+
+        .bg-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .bg-gradient {
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(0, 102, 204, 0.45) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(201, 168, 76, 0.25) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, #001f4d 0%, #0a1628 100%);
+            animation: bgShift 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes bgShift {
+            0% { transform: scale(1) rotate(0deg); }
+            100% { transform: scale(1.15) rotate(3deg); }
+        }
+
+        .bg-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(circle at center, black 30%, transparent 75%);
+            -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 75%);
+        }
+
+        .bg-dots {
+            position: absolute;
+            inset: 0;
+        }
+
+        .bg-dot {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #4d9fff;
+            box-shadow: 0 0 12px 3px rgba(77, 159, 255, 0.7);
+            animation: floatDot 15s linear infinite;
+        }
+
+        .bg-dot.gold {
+            background: var(--aero-gold);
+            box-shadow: 0 0 12px 3px rgba(201, 168, 76, 0.7);
+        }
+
+        @keyframes floatDot {
+            0% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0;
+            }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% {
+                transform: translate(var(--dx, 100px), var(--dy, -200px)) scale(0.3);
+                opacity: 0;
+            }
+        }
+
+        .bg-plane {
+            position: absolute;
+            color: rgba(255, 255, 255, 0.04);
+            font-size: 120px;
+            animation: planeFloat 30s linear infinite;
+        }
+
+        @keyframes planeFloat {
+            0% {
+                transform: translate(-200px, 100vh) rotate(-15deg);
+                opacity: 0;
+            }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% {
+                transform: translate(110vw, -200px) rotate(-15deg);
+                opacity: 0;
+            }
+        }
+
+        /* =========================================================
+           Основная карточка логина
+           ========================================================= */
+
+        .login-wrapper {
+            width: 100%;
+            max-width: 460px;
+            position: relative;
+            z-index: 10;
+            animation: cardEnter 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes cardEnter {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.96);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .login-card {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 48px 40px 40px;
+            box-shadow:
+                0 0 0 1px rgba(255, 255, 255, 0.1),
+                0 20px 60px rgba(0, 0, 0, 0.4),
+                0 0 120px rgba(77, 159, 255, 0.15);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg,
+                var(--aero-blue) 0%,
+                #4d9fff 30%,
+                var(--aero-gold) 70%,
+                var(--aero-blue) 100%);
+            background-size: 200% 100%;
+            animation: goldShimmer 6s linear infinite;
+        }
+
+        @keyframes goldShimmer {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
+        }
+
+        /* =========================================================
+           Заголовок бренда
+           ========================================================= */
+
+        .brand-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+
+        .brand-logo .logo-icon {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, var(--aero-blue) 0%, #0055aa 100%);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 26px;
+            box-shadow:
+                0 8px 24px rgba(0, 51, 102, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .brand-logo .logo-icon::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(
+                45deg,
+                transparent 30%,
+                rgba(255, 255, 255, 0.4) 50%,
+                transparent 70%
+            );
+            animation: iconShine 4s ease-in-out infinite;
+        }
+
+        @keyframes iconShine {
+            0%, 100% { transform: translateX(-100%) translateY(-100%); }
+            50% { transform: translateX(100%) translateY(100%); }
+        }
+
+        .brand-logo .brand-name {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -1.2px;
+            color: var(--aero-text);
+            line-height: 1;
+            display: flex;
+            align-items: center;
+        }
+
+        .brand-logo .brand-name .brand-in {
+            color: #4a5a6a;
+            font-weight: 300;
+        }
+
+        .brand-logo .brand-name .brand-tr {
+            background: linear-gradient(135deg, var(--aero-blue) 0%, #0066cc 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+        }
+
+        .brand-logo .brand-name .brand-avia {
+            background: linear-gradient(135deg, var(--aero-gold) 0%, #e0c974 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+        }
+
+        .brand-divider {
+            width: 64px;
+            height: 3px;
+            background: linear-gradient(90deg, var(--aero-blue), var(--aero-gold));
+            margin: 14px auto 0;
+            border-radius: 3px;
+        }
+
+        .brand-subtitle {
+            font-size: 12px;
+            color: var(--aero-gray);
+            margin-top: 12px;
+            font-weight: 500;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .brand-subtitle strong {
+            color: var(--aero-blue);
+            font-weight: 700;
+        }
+
+        /* =========================================================
+           Форма
+           ========================================================= */
+
+        .form-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--aero-text);
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
+        }
+
+        .form-subtitle {
+            color: var(--aero-gray);
+            font-size: 14px;
+            margin-bottom: 26px;
+            line-height: 1.5;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--aero-text-light);
+            margin-bottom: 8px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        .form-group label i {
+            margin-right: 8px;
+            color: var(--aero-blue);
+            width: 14px;
+            font-size: 12px;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid var(--aero-gray-light);
+            border-radius: 12px;
+            font-size: 15px;
+            font-family: inherit;
+            transition: all 0.25s ease;
+            background: #fafbfc;
+            color: var(--aero-text);
+            font-weight: 500;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--aero-blue);
+            background: #ffffff;
+            box-shadow:
+                0 0 0 4px rgba(0, 51, 102, 0.08),
+                0 4px 12px rgba(0, 51, 102, 0.06);
+        }
+
+        .form-group input::placeholder {
+            color: #b0c0d0;
+            font-weight: 400;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, var(--aero-blue) 0%, #0055aa 100%);
+            color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 8px;
+            position: relative;
+            overflow: hidden;
+            letter-spacing: 0.3px;
+            box-shadow:
+                0 8px 24px rgba(0, 51, 102, 0.25),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-login::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.25),
+                transparent
+            );
+            transition: left 0.6s;
+        }
+
+        .btn-login:hover::before {
+            left: 100%;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow:
+                0 12px 32px rgba(0, 51, 102, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        .btn-login i {
+            font-size: 15px;
+            transition: transform 0.25s;
+        }
+
+        .btn-login:hover i {
+            transform: translateX(3px);
+        }
+
+        /* =========================================================
+           Ошибка
+           ========================================================= */
+
+        .error-msg {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 18px;
+            display: none;
+            font-size: 13px;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid #fecaca;
+            font-weight: 500;
+            animation: errorShake 0.4s ease;
+        }
+
+        .error-msg.show {
+            display: flex;
+        }
+
+        @keyframes errorShake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .error-msg i {
+            font-size: 16px;
+        }
+
+        /* =========================================================
+           Футер
+           ========================================================= */
+
+        .login-footer {
+            text-align: center;
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid var(--aero-gray-light);
+        }
+
+        .login-footer .team-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--aero-text);
+            letter-spacing: 0.3px;
+        }
+
+        .login-footer .team-name span {
+            background: linear-gradient(135deg, var(--aero-blue), var(--aero-gold));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+
+        .login-footer .footer-divider {
+            width: 40px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--aero-blue), var(--aero-gold));
+            margin: 10px auto;
+            border-radius: 2px;
+            opacity: 0.4;
+        }
+
+        .login-footer .footer-text {
+            font-size: 11px;
+            color: var(--aero-gray);
+            letter-spacing: 0.5px;
+            line-height: 1.6;
+        }
+
+        /* =========================================================
+           Адаптив
+           ========================================================= */
+
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 32px 24px 28px;
+                border-radius: 20px;
+            }
+            .brand-logo .brand-name {
+                font-size: 24px;
+            }
+            .brand-logo .logo-icon {
+                width: 46px;
+                height: 46px;
+                font-size: 20px;
+            }
+            .form-title {
+                font-size: 19px;
+            }
+            .bg-plane {
+                font-size: 80px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== ФОН ===== -->
+    <div class="bg-layer">
+        <div class="bg-gradient"></div>
+        <div class="bg-grid"></div>
+        <div class="bg-dots" id="bgDots"></div>
+        <div class="bg-plane" style="top: 20%; animation-delay: 0s;">✈</div>
+        <div class="bg-plane" style="top: 60%; animation-delay: -12s; font-size: 80px;">✈</div>
+        <div class="bg-plane" style="top: 40%; animation-delay: -22s; font-size: 60px;">✈</div>
+    </div>
+
+    <!-- ===== Карточка логина ===== -->
+    <div class="login-wrapper">
+        <div class="login-card">
+
+            <div class="brand-header">
+                <div class="brand-logo">
+                    <div class="logo-icon">✈</div>
+                    <div class="brand-name">
+                        <span class="brand-in">In</span><span class="brand-tr">Tr</span><span class="brand-avia">Avia</span>
+                    </div>
+                </div>
+                <div class="brand-divider"></div>
+                <div class="brand-subtitle">
+                    Система оперативного ТО · <strong>Аэрофлот</strong>
+                </div>
+            </div>
+
+            <h2 class="form-title">Добро пожаловать</h2>
+            <p class="form-subtitle">Войдите в систему диспетчеризации InTrAvia Dispatch</p>
+
+            <div class="error-msg" id="errorMsg">
+                <i class="fas fa-exclamation-circle"></i>
+                <span>Неверный email или пароль</span>
+            </div>
+
+            <form id="loginForm" autocomplete="on">
+                <div class="form-group">
+                    <label for="email"><i class="fas fa-envelope"></i>Электронная почта</label>
+                    <div class="input-wrapper">
+                        <input type="email" id="email" placeholder="ivanov@aeroflot.ru" required autocomplete="username">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="password"><i class="fas fa-lock"></i>Пароль</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+                    </div>
+                </div>
+                <button type="submit" class="btn-login">
+                    <span>Войти в систему</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+
+            <div class="login-footer">
+                <div class="team-name">Команда <span>InTrAvia</span></div>
+                <div class="footer-divider"></div>
+                <div class="footer-text">
+                    Специально для ПАО «Аэрофлот»
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        /* =========================================================
+           InTrAvia Dispatch — Login Script
+           =========================================================
+           Помимо авторизации через сервер (/api/auth/login),
+           реализован локальный фолбэк для быстрого входа
+           пилотов по данным, которые уже есть на фронте.
+           ========================================================= */
+
+        var API_URL = '/api';
+
+        /* =========================================================
+           Локальная база пилотов — используется, если сервер
+           недоступен или не знает про роль pilot.
+           ========================================================= */
+        var LOCAL_PILOTS = [
+            {
+                id: 'pilot_1',
+                name: 'Иванов И.И.',
+                email: 'ivanov@aeroflot.ru',
+                password: 'pilot123',
+                role: 'pilot',
+                avatar: '👨‍✈️',
+                aircraft: 'SU-1234',
+                rank: 'КВС',
+                phone: '+7 (999) 100-10-01',
+                status: 'active'
+            },
+            {
+                id: 'pilot_2',
+                name: 'Петров П.П.',
+                email: 'petrov@aeroflot.ru',
+                password: 'pilot123',
+                role: 'pilot',
+                avatar: '👨‍✈️',
+                aircraft: 'SU-1235',
+                rank: 'Пилот',
+                phone: '+7 (999) 100-10-02',
+                status: 'active'
+            },
+            {
+                id: 'pilot_3',
+                name: 'Сидоров С.С.',
+                email: 'sidorov@aeroflot.ru',
+                password: 'pilot123',
+                role: 'pilot',
+                avatar: '👨‍✈️',
+                aircraft: 'SU-1236',
+                rank: 'Второй пилот',
+                phone: '+7 (999) 100-10-03',
+                status: 'active'
+            },
+            {
+                id: 'pilot_4',
+                name: 'Кузнецов К.К.',
+                email: 'kuznetsov@aeroflot.ru',
+                password: 'pilot123',
+                role: 'pilot',
+                avatar: '👨‍✈️',
+                aircraft: 'SU-1237',
+                rank: 'КВС',
+                phone: '+7 (999) 100-10-04',
+                status: 'active'
+            },
+            {
+                id: 'pilot_5',
+                name: 'Смирнов С.С.',
+                email: 'smirnov@aeroflot.ru',
+                password: 'pilot123',
+                role: 'pilot',
+                avatar: '👨‍✈️',
+                aircraft: 'SU-1238',
+                rank: 'Пилот',
+                phone: '+7 (999) 100-10-05',
+                status: 'active'
+            }
+        ];
+
+        (function() {
+            // =========================================================
+            // Генерация плавающих точек на фоне
+            // =========================================================
+            function generateBgDots() {
+                var container = document.getElementById('bgDots');
+                if (!container) return;
+
+                var count = 25;
+                var html = '';
+
+                for (var i = 0; i < count; i++) {
+                    var isGold = Math.random() > 0.7;
+                    var x = Math.random() * 100;
+                    var y = Math.random() * 100;
+                    var dx = (Math.random() - 0.5) * 400;
+                    var dy = -Math.random() * 300 - 100;
+                    var delay = Math.random() * 15;
+                    var duration = 10 + Math.random() * 15;
+
+                    html += '<div class="bg-dot' + (isGold ? ' gold' : '') + '" style="' +
+                        'left: ' + x + '%;' +
+                        'top: ' + y + '%;' +
+                        '--dx: ' + dx + 'px;' +
+                        '--dy: ' + dy + 'px;' +
+                        'animation-delay: -' + delay + 's;' +
+                        'animation-duration: ' + duration + 's;' +
+                        '"></div>';
+                }
+
+                container.innerHTML = html;
+            }
+
+            // =========================================================
+            // Карта редиректов по ролям
+            // =========================================================
+            var DASHBOARDS = {
+                'admin': '/admin/dashboard.html',
+                'dispatcher': '/dispatcher/dashboard.html',
+                'engineer': '/engineer/dashboard.html',
+                'pilot': '/pilot/dashboard.html'
+            };
+
+            // =========================================================
+            // Проверка активной сессии
+            // =========================================================
+            var session = sessionStorage.getItem('userSession');
+            if (session) {
+                try {
+                    var savedUser = JSON.parse(session);
+                    if (savedUser.role && DASHBOARDS[savedUser.role]) {
+                        window.location.href = DASHBOARDS[savedUser.role];
+                        return;
+                    }
+                } catch (_) {}
+            }
+
+            generateBgDots();
+
+            // =========================================================
+            // Поиск пилота в локальной базе
+            // =========================================================
+            function findLocalPilot(email, password) {
+                for (var i = 0; i < LOCAL_PILOTS.length; i++) {
+                    var p = LOCAL_PILOTS[i];
+                    if (p.email.toLowerCase() === email.toLowerCase() && p.password === password) {
+                        return p;
+                    }
+                }
+                return null;
+            }
+
+            // =========================================================
+            // Обработка формы логина
+            // =========================================================
+            var form = document.getElementById('loginForm');
+            var errorMsg = document.getElementById('errorMsg');
+            var emailInput = document.getElementById('email');
+            var passwordInput = document.getElementById('password');
+            var submitBtn = form.querySelector('button[type="submit"]');
+
+            function showError(text) {
+                errorMsg.querySelector('span').textContent = text;
+                errorMsg.classList.remove('show');
+                void errorMsg.offsetWidth;
+                errorMsg.classList.add('show');
+            }
+
+            function hideError() {
+                errorMsg.classList.remove('show');
+            }
+
+            function performRedirect(user) {
+                sessionStorage.setItem('userSession', JSON.stringify(user));
+
+                submitBtn.innerHTML = '<i class="fas fa-check"></i><span>Успешно</span>';
+                submitBtn.style.background = 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)';
+
+                var target = DASHBOARDS[user.role];
+                if (!target) {
+                    showError('Неизвестная роль: ' + user.role);
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                    submitBtn.innerHTML = '<span>Войти в систему</span><i class="fas fa-arrow-right"></i>';
+                    return;
+                }
+
+                setTimeout(function() {
+                    window.location.href = target;
+                }, 400);
+            }
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                var email = emailInput.value.trim();
+                var password = passwordInput.value.trim();
+
+                if (!email || !password) {
+                    showError('Заполните все поля');
+                    return;
+                }
+
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    showError('Некорректный формат email');
+                    return;
+                }
+
+                hideError();
+
+                var originalText = submitBtn.innerHTML;
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = '0.7';
+                submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i><span>Проверка...</span>';
+
+                /* Сначала пробуем сервер. Если он вернул ошибку или
+                   недоступен — проверяем локальный список пилотов. */
+                fetch(API_URL + '/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, password: password })
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.success && data.user) {
+                        performRedirect(data.user);
+                        return;
+                    }
+
+                    // Сервер ответил, но вход не удался — пробуем локальный список
+                    var localPilot = findLocalPilot(email, password);
+                    if (localPilot) {
+                        var userCopy = {
+                            id: localPilot.id,
+                            name: localPilot.name,
+                            email: localPilot.email,
+                            role: localPilot.role,
+                            avatar: localPilot.avatar,
+                            aircraft: localPilot.aircraft,
+                            rank: localPilot.rank,
+                            phone: localPilot.phone
+                        };
+                        performRedirect(userCopy);
+                    } else {
+                        showError((data && data.error) || 'Неверный email или пароль');
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                        submitBtn.innerHTML = originalText;
+                    }
+                })
+                .catch(function(err) {
+                    // Сервер недоступен — проверяем локальный список
+                    console.warn('Сервер недоступен, проверяем локально', err);
+                    var localPilot = findLocalPilot(email, password);
+                    if (localPilot) {
+                        var userCopy = {
+                            id: localPilot.id,
+                            name: localPilot.name,
+                            email: localPilot.email,
+                            role: localPilot.role,
+                            avatar: localPilot.avatar,
+                            aircraft: localPilot.aircraft,
+                            rank: localPilot.rank,
+                            phone: localPilot.phone
+                        };
+                        performRedirect(userCopy);
+                    } else {
+                        showError('Ошибка соединения с сервером');
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                        submitBtn.innerHTML = originalText;
+                    }
+                });
+            });
+
+            emailInput.addEventListener('input', hideError);
+            passwordInput.addEventListener('input', hideError);
+
+            [emailInput, passwordInput].forEach(function(input) {
+                input.addEventListener('focus', function() {
+                    this.parentElement.style.transform = 'scale(1.01)';
+                    this.parentElement.style.transition = 'transform 0.2s';
+                });
+                input.addEventListener('blur', function() {
+                    this.parentElement.style.transform = 'scale(1)';
+                });
+            });
+        })();
+    </script>
+
+</body>
+</html>

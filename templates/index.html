@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Dispatch System - Главная</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0a1628 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .background-animation {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 0;
+            overflow: hidden;
+        }
+        .bg-circle {
+            position: absolute;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(76, 175, 80, 0.1) 0%, transparent 70%);
+            animation: float 20s ease-in-out infinite;
+        }
+        .bg-circle:nth-child(1) { width: 600px; height: 600px; top: -200px; left: -200px; animation-delay: 0s; }
+        .bg-circle:nth-child(2) { width: 500px; height: 500px; bottom: -150px; right: -150px; animation-delay: -7s; }
+        .bg-circle:nth-child(3) { width: 400px; height: 400px; top: 50%; left: 50%; transform: translate(-50%, -50%); animation-delay: -14s; }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+            33% { transform: translate(30px, -30px) scale(1.1); opacity: 0.8; }
+            66% { transform: translate(-20px, 20px) scale(0.9); opacity: 0.6; }
+        }
+        .main-container {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            width: 100%;
+            padding: 40px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+        .header .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 16px;
+            background: rgba(255,255,255,0.05);
+            padding: 16px 32px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+        }
+        .header .logo i {
+            font-size: 40px;
+            color: #4CAF50;
+        }
+        .header .logo h1 {
+            font-size: 32px;
+            color: white;
+            font-weight: 700;
+        }
+        .header .logo .badge {
+            background: #F44336;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .header p {
+            color: #8a9bb5;
+            font-size: 18px;
+            margin-top: 12px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 32px 28px;
+            text-align: center;
+            transition: all 0.4s ease;
+            cursor: pointer;
+            text-decoration: none;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+            opacity: 0;
+            transition: 0.4s;
+        }
+        .card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(76, 175, 80, 0.3);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .card:hover::before { opacity: 1; }
+        .card .icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin: 0 auto 16px;
+            transition: 0.4s;
+        }
+        .card:hover .icon { transform: scale(1.1); }
+        .card .icon.admin { background: rgba(33, 150, 243, 0.2); color: #2196F3; }
+        .card .icon.dispatcher { background: rgba(255, 152, 0, 0.2); color: #FF9800; }
+        .card .icon.engineer { background: rgba(76, 175, 80, 0.2); color: #4CAF50; }
+        .card .icon.guest { background: rgba(156, 39, 176, 0.2); color: #9C27B0; }
+        .card h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+        .card p { color: #8a9bb5; font-size: 14px; line-height: 1.6; }
+        .card .arrow {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: 0.4s;
+            background: rgba(255,255,255,0.05);
+        }
+        .card:hover .arrow {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        .card .role-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 8px;
+            background: rgba(255,255,255,0.05);
+            color: #6a7a8a;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            color: #4a5a6a;
+            font-size: 13px;
+        }
+        .footer span { margin: 0 12px; }
+        .footer a {
+            color: #6a7a8a;
+            text-decoration: none;
+            transition: 0.2s;
+        }
+        .footer a:hover { color: #4CAF50; }
+        @media (max-width: 768px) {
+            .header .logo { flex-wrap: wrap; justify-content: center; padding: 12px 20px; }
+            .header .logo h1 { font-size: 24px; }
+            .grid { grid-template-columns: 1fr; max-width: 400px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-animation">
+        <div class="bg-circle"></div>
+        <div class="bg-circle"></div>
+        <div class="bg-circle"></div>
+    </div>
+    
+    <div class="main-container">
+        <div class="header">
+            <div class="logo">
+                <i class="fas fa-plane-departure"></i>
+                <h1>Smart Dispatch</h1>
+                <span class="badge">ОТО</span>
+            </div>
+            <p>Система оперативного техобслуживания воздушных судов</p>
+        </div>
+        
+        <div class="grid">
+            <a href="/login.html" class="card">
+                <div class="icon admin"><i class="fas fa-user-cog"></i></div>
+                <h3>Администратор</h3>
+                <p>Управление инженерами, настройки системы, статистика</p>
+                <span class="role-badge">🔐 Полный доступ</span>
+                <span class="arrow"><i class="fas fa-arrow-right"></i> Войти</span>
+            </a>
+            
+            <a href="/login.html" class="card">
+                <div class="icon dispatcher"><i class="fas fa-user-tie"></i></div>
+                <h3>Диспетчер ОТО</h3>
+                <p>Создание заявок, назначение инженеров, контроль выполнения</p>
+                <span class="role-badge">📋 Управление заявками</span>
+                <span class="arrow"><i class="fas fa-arrow-right"></i> Войти</span>
+            </a>
+            
+            <a href="/login.html" class="card">
+                <div class="icon engineer"><i class="fas fa-user-helmet-safety"></i></div>
+                <h3>Инженер ОТО</h3>
+                <p>Просмотр задач, подтверждение прибытия, отчетность</p>
+                <span class="role-badge">🔧 Выполнение задач</span>
+                <span class="arrow"><i class="fas fa-arrow-right"></i> Войти</span>
+            </a>
+        </div>
+        
+        <div class="footer">
+            <span>© 2026 Smart Dispatch System</span>
+            <span>|</span>
+            <span>ПАО «Аэрофлот»</span>
+            <span>|</span>
+            <a href="#">О системе</a>
+            <span>|</span>
+            <a href="#">Документация</a>
+        </div>
+    </div>
+</body>
+</html>

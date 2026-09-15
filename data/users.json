@@ -1,0 +1,151 @@
+{
+  "users": [
+    {
+      "id": "admin_1",
+      "email": "admin@aeroflot.ru",
+      "password": "admin123",
+      "role": "admin",
+      "name": "Администратор системы",
+      "avatar": "👨‍💼"
+    },
+    {
+      "id": "dispatcher_1",
+      "email": "dispatcher@aeroflot.ru",
+      "password": "disp123",
+      "role": "dispatcher",
+      "name": "Иванов Алексей Андреевич",
+      "avatar": "👨‍✈️",
+      "shift": "Дневная смена"
+    }
+  ],
+  "engineers": [
+    {
+      "id": "eng_3",
+      "email": "sidorov@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Сидоров Михаил Петрович",
+      "avatar": "🔧",
+      "specialization": "engine",
+      "status": "free",
+      "coords": [
+        55.9715,
+        37.415
+      ],
+      "task": null,
+      "phone": "+7 (999) 333-44-55"
+    },
+    {
+      "id": "eng_4",
+      "email": "kozlov@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Козлов Дмитрий Игоревич",
+      "avatar": "🔧",
+      "specialization": "mechanical",
+      "status": "arriving",
+      "coords": [
+        55.975,
+        37.41
+      ],
+      "task": "ВС A320-200",
+      "phone": "+7 (999) 444-55-66"
+    },
+    {
+      "id": "eng_5",
+      "email": "morozova@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Морозова Анна Александровна",
+      "avatar": "🔧",
+      "specialization": "general",
+      "status": "free",
+      "coords": [
+        55.972,
+        37.42
+      ],
+      "task": null,
+      "phone": "+7 (999) 555-66-77"
+    },
+    {
+      "id": "eng_6",
+      "email": "novikov@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Новиков Игорь Сергеевич",
+      "avatar": "🔧",
+      "specialization": "electrical",
+      "status": "free",
+      "coords": [
+        55.97,
+        37.405
+      ],
+      "task": null,
+      "phone": "+7 (999) 666-77-88"
+    },
+    {
+      "id": "eng_7",
+      "email": "soloviev@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Соловьев Егор Владимирович",
+      "avatar": "🔧",
+      "specialization": "avionics",
+      "status": "free",
+      "coords": [
+        55.976,
+        37.415
+      ],
+      "task": null,
+      "phone": "+7 (999) 777-88-99"
+    },
+    {
+      "id": "eng_8",
+      "email": "vasiliev@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Васильев Павел Андреевич",
+      "avatar": "🔧",
+      "specialization": "engine",
+      "status": "arriving",
+      "coords": [
+        55.971,
+        37.41
+      ],
+      "task": "ВС A320-100",
+      "phone": "+7 (999) 888-99-00"
+    },
+    {
+      "id": "eng_9",
+      "email": "pavlov@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Павлов Роман Сергеевич",
+      "avatar": "🔧",
+      "specialization": "mechanical",
+      "status": "free",
+      "coords": [
+        55.9735,
+        37.422
+      ],
+      "task": null,
+      "phone": "+7 (999) 999-00-11"
+    },
+    {
+      "id": "eng_10",
+      "email": "semenov@aeroflot.ru",
+      "password": "eng123",
+      "role": "engineer",
+      "name": "Семенов Олег Николаевич",
+      "avatar": "🔧",
+      "specialization": "general",
+      "status": "free",
+      "coords": [
+        55.9705,
+        37.418
+      ],
+      "task": null,
+      "phone": "+7 (999) 000-11-22"
+    }
+  ]
+}

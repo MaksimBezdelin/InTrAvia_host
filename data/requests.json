@@ -1,0 +1,79 @@
+[
+  {
+    "id": "req_20260810150245",
+    "aircraft": "SSJ-100",
+    "fault_type": "electrical",
+    "parking_id": "5",
+    "engineer_id": "eng_5",
+    "engineer_name": "Морозова Анна Александровна",
+    "travel_time": 3.8,
+    "status": "assigned",
+    "timestamp": "2026-08-10T15:02:45.310526"
+  },
+  {
+    "id": "req_20260810153502",
+    "aircraft": "A320-100",
+    "fault_type": "engine",
+    "parking_id": "1",
+    "engineer_id": "eng_11",
+    "engineer_name": "Тимофеев Кирилл Александрович",
+    "travel_time": 3.5,
+    "status": "assigned",
+    "timestamp": "2026-08-10T15:35:02.388506"
+  },
+  {
+    "id": "req_20260810153528",
+    "aircraft": "A320-100",
+    "fault_type": "engine",
+    "parking_id": "1",
+    "engineer_id": "eng_11",
+    "engineer_name": "Тимофеев Кирилл Александрович",
+    "travel_time": 3.5,
+    "status": "assigned",
+    "timestamp": "2026-08-10T15:35:28.798533"
+  },
+  {
+    "id": "req_20260810153534",
+    "aircraft": "A320-100",
+    "fault_type": "engine",
+    "parking_id": "1",
+    "engineer_id": "eng_10",
+    "engineer_name": "Семенов Олег Николаевич",
+    "travel_time": 5.3,
+    "status": "assigned",
+    "timestamp": "2026-08-10T15:35:34.338650"
+  },
+  {
+    "id": "req_20260810153540",
+    "aircraft": "A320-100",
+    "fault_type": "engine",
+    "parking_id": "1",
+    "engineer_id": "eng_11",
+    "engineer_name": "Тимофеев Кирилл Александрович",
+    "travel_time": 3.5,
+    "status": "assigned",
+    "timestamp": "2026-08-10T15:35:40.792581"
+  },
+  {
+    "id": "req_20260810153552",
+    "aircraft": "A320-200",
+    "fault_type": "engine",
+    "parking_id": "1",
+    "engineer_id": "eng_11",
+    "engineer_name": "Тимофеев Кирилл Александрович",
+    "travel_time": 3.5,
+    "status": "assigned",
+    "timestamp": "2026-08-10T15:35:52.702588"
+  },
+  {
+    "id": "req_20260810225852",
+    "aircraft": "A320-100",
+    "fault_type": "engine",
+    "parking_id": "1",
+    "engineer_id": "eng_20260810225838",
+    "engineer_name": "Макакасов Макакас Макакасович",
+    "travel_time": 5.7,
+    "status": "assigned",
+    "timestamp": "2026-08-10T22:58:52.364697"
+  }
+]
