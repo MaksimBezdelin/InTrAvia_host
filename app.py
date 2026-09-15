@@ -17,7 +17,8 @@
 #   - задержки рейсов, отмена рейса с удалением заявки;
 #   - флаг all_rejected (когда отказались все специалисты);
 #   - повторная проверка очереди через 10 секунд;
-#   - миграции колонок, нумерация инженеров, устойчивость к WAL.
+#   - миграции колонок, нумерация инженеров, устойчивость к WAL;
+#   - кроссплатформенный поиск ffmpeg (Windows + Linux/Render).
 #
 # Каждый блок помечен по происхождению:
 #   [AI]  — сгенерировано нейросетью;
@@ -32,7 +33,6 @@ import os
 import re
 import math
 import time
-import json
 import base64
 import sqlite3
 import tempfile
@@ -40,13 +40,18 @@ import subprocess
 import shutil
 import threading
 from flask import (
-    Flask, request, jsonify, session,
+    Flask, request, jsonify,
     render_template, redirect, url_for,
     Response, abort
 )
 
 # ------------------------------------------------------------
 # [MIX] Конфигурация
+# ------------------------------------------------------------
+# Нейросеть предложила общий каркас, вручную добавлены:
+#   - RECHECK_DELAY_SEC (повторная проверка очереди);
+#   - FFMPEG_PATH_WINDOWS под конкретную машину;
+#   - функция find_ffmpeg() для кроссплатформенного поиска.
 # ------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'database.db')
@@ -57,19 +62,45 @@ REGULATION_MINUTES = 15
 WALK_SPEED_KMH = 5.0
 RECHECK_DELAY_SEC = 10   # [MAN] повторная проверка очереди
 
-FFMPEG_PATH = r'C:\Users\deela\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe'
+# ============================================================
+# [MAN] Кроссплатформенный поиск ffmpeg
+# ------------------------------------------------------------
+# На Windows пробуем конкретный путь из WinGet, на Linux
+# (Render, Docker, сервер) ищем бинарь в PATH через shutil.which.
+# Это ключевая правка, без которой голосовые заявки на Render
+# падали с «ffmpeg not found».
+# ============================================================
+FFMPEG_PATH_WINDOWS = r'C:\Users\deela\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe'
 
-# [MAN] проверка ffmpeg и подмешивание его в PATH
-if os.path.exists(FFMPEG_PATH):
+
+def find_ffmpeg():
+    """Возвращает путь к ffmpeg или None, если не найден."""
+    # 1. Если явно указан Windows-путь и он существует — берём его
+    if os.path.exists(FFMPEG_PATH_WINDOWS):
+        return FFMPEG_PATH_WINDOWS
+    # 2. Ищем в PATH (Linux, macOS, если ffmpeg установлен в системе)
+    found = shutil.which('ffmpeg') or shutil.which('ffmpeg.exe')
+    if found:
+        return found
+    return None
+
+
+FFMPEG_PATH = find_ffmpeg()
+
+if FFMPEG_PATH:
+    print(f'[FFMPEG] Найден: {FFMPEG_PATH}')
+    # Подмешиваем директорию в PATH на случай, если где-то
+    # вызывается просто 'ffmpeg' без полного пути
     ffmpeg_dir = os.path.dirname(FFMPEG_PATH)
     current_path = os.environ.get('PATH', '')
     if ffmpeg_dir not in current_path.split(os.pathsep):
         os.environ['PATH'] = ffmpeg_dir + os.pathsep + current_path
         print(f'[FFMPEG] Добавлено в PATH: {ffmpeg_dir}')
-    else:
-        print(f'[FFMPEG] Уже в PATH: {ffmpeg_dir}')
 else:
-    print(f'[FFMPEG] ВНИМАНИЕ: {FFMPEG_PATH} не найден!')
+    print('[FFMPEG] ВНИМАНИЕ: ffmpeg не найден!')
+    print('[FFMPEG] Расшифровка голосовых заявок работать не будет.')
+    print('[FFMPEG] Windows: установи через winget или скачай с ffmpeg.org')
+    print('[FFMPEG] Linux: sudo apt-get install -y ffmpeg')
 
 app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR)
 app.secret_key = 'intravia-secret-key-change-in-production'
@@ -78,6 +109,9 @@ app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 
 # ------------------------------------------------------------
 # [MAN] Координаты стоянок
+# ------------------------------------------------------------
+# Сгенерированный «рыбный» список — но конкретные значения
+# взяты вручную (реальные точки на территории SVO).
 # ------------------------------------------------------------
 PARKING_COORDS = {
     '101': (55.9807, 37.4171), '102': (55.9806, 37.4171),
@@ -142,6 +176,10 @@ def distance_km(lat1, lng1, lat2, lng2):
 
 # ============================================================
 # [MIX] Соединение с БД
+# ------------------------------------------------------------
+# Каркас sqlite3.connect — от нейросети, вручную добавлены
+# PRAGMA-настройки для работы в многопоточном Flask (WAL,
+# busy_timeout) — без них ловили «database is locked».
 # ============================================================
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=30)
@@ -158,6 +196,19 @@ def get_db():
 
 # ============================================================
 # [MIX] Схема БД
+# ------------------------------------------------------------
+# Первоначальные таблицы (users, engineers, pilots, transport,
+# requests) — сгенерированы нейросетью.
+# Вручную доработаны:
+#   - набор колонок под отказ/отмену (rejected_by, cancel_reason,
+#     cancelled_by_name, cancelled_at);
+#   - блок отмены рейса и задержек (delay_*, flight_cancelled);
+#   - флаг all_rejected (все специалисты отказались);
+#   - секция MIGRATION для докатки колонок на существующей БД.
+#
+# ВАЖНО: внутри SQL-строки НЕТ комментариев вида «# [MAN]» —
+# SQLite не понимает символ '#' и падает с unrecognized token.
+# Пометки оставлены только в Python-коде над вызовом execute().
 # ============================================================
 def ensure_schema(conn):
     cur = conn.cursor()
@@ -218,9 +269,7 @@ def ensure_schema(conn):
     """)
 
     # [MIX] Таблица requests — каркас от нейросети,
-    # вручную добавлены блоки под отказ/отмену/задержки.
-    # ВАЖНО: комментарии внутри SQL-строки удалены — SQLite
-    # не понимает символ '#' и падает с unrecognized token.
+    # вручную добавлены блоки под отказ/отмену/задержки
     cur.execute("""
         CREATE TABLE IF NOT EXISTS requests (
             id                    TEXT PRIMARY KEY,
@@ -302,6 +351,10 @@ def ensure_schema(conn):
 
 # ============================================================
 # [MIX] Начальные данные
+# ------------------------------------------------------------
+# Каркас seed-функции — от нейросети.
+# Вручную расширены списки инженеров (16, распределены по
+# специализациям) и добавлены логины/пароли.
 # ============================================================
 def seed_initial_data(conn):
     cur = conn.cursor()
@@ -325,7 +378,9 @@ def seed_initial_data(conn):
             ('disp_2', 'dispatcher2@aeroflot.ru', 'disp123', 'Козлов К.К.',  '+7 (999) 200-10-02', 'night'),
         ])
 
-    # [MIX] Инженеры
+    # [MIX] Инженеры — вручную расширен список до 16 человек,
+    # сбалансировано по специализациям: engine, avionics,
+    # hydraulics, electrical, mechanical, general
     cur.execute("SELECT COUNT(*) FROM engineers")
     if cur.fetchone()[0] == 0:
         cur.executemany("""
@@ -416,6 +471,9 @@ def seed_initial_data(conn):
 
 # ============================================================
 # [MAN] Номера инженеров (EN-XXX)
+# ------------------------------------------------------------
+# Логика сквозной нумерации по device_id — ручная доработка,
+# чтобы фронт и карта стабильно понимали «номер» инженера.
 # ============================================================
 DEVICE_ID_RE = re.compile(r'^EN-(\d{3})$')
 
@@ -453,6 +511,10 @@ def normalize_device_id(device_id, number):
 
 # ============================================================
 # [MAN] Миграция нумерации инженеров
+# ------------------------------------------------------------
+# Написано вручную: раздаёт eng_N / EN-00N по порядку.
+# Использует временные id, чтобы не ловить PRIMARY KEY collision
+# при UPDATE внутри одной таблицы.
 # ============================================================
 def migrate_engineer_numbers():
     conn = get_db()
@@ -531,6 +593,10 @@ def init_db():
 
 # ============================================================
 # [MIX] Утилиты инженеров
+# ------------------------------------------------------------
+# Каркас — от нейросети, вручную добавлены:
+#   - учёт active_requests (не освобождать, если есть другие
+#     активные заявки, — критично для клона после отмены).
 # ============================================================
 def set_engineer_busy(conn, engineer_id, task_text):
     if not engineer_id:
@@ -579,6 +645,10 @@ def engineer_has_active_requests(conn, engineer_id, exclude_request_id=None):
 
 # ============================================================
 # [MAN] Поиск инженера — строго по специализации
+# ------------------------------------------------------------
+# Ключевое отличие от «нейросетевой» версии: никаких fallback
+# на general и «любых свободных». Если на engine_failure нет
+# свободного engine — заявка уходит в очередь.
 # ============================================================
 def get_free_engineer_for(conn, fault_type, required_skill_map,
                           target_lat=None, target_lng=None,
@@ -676,6 +746,10 @@ def get_free_engineer_for(conn, fault_type, required_skill_map,
 
 # ============================================================
 # [MAN] Разбор очереди
+# ------------------------------------------------------------
+# Логика: берём все queued заявки, пытаемся назначить по
+# специализации, исключая отказавшихся и занятых.
+# При назначении сбрасываем delay_* и all_rejected.
 # ============================================================
 def try_reassign_queued():
     conn = get_db()
@@ -756,7 +830,7 @@ def try_reassign_queued():
 
 
 # ============================================================
-# [AI] Страницы
+# [AI] Страницы — каркас от нейросети, ничего особенного
 # ============================================================
 @app.route('/')
 def index():
@@ -789,7 +863,7 @@ def pilot_dashboard():
 
 
 # ============================================================
-# [AI] Авторизация
+# [AI] Авторизация — типовой login-эндпоинт
 # ============================================================
 @app.route('/api/auth/login', methods=['POST'])
 def auth_login():
@@ -841,6 +915,10 @@ def auth_login():
 
 # ============================================================
 # [MIX] Инженеры — CRUD
+# ------------------------------------------------------------
+# Каркас от нейросети, вручную:
+#   - в ответах нормализуем device_id и добавляем number;
+#   - при создании инженера выдаём следующий номер.
 # ============================================================
 @app.route('/api/engineers', methods=['GET'])
 def get_engineers():
@@ -1257,6 +1335,11 @@ def update_transport_coords(transport_id):
 
 # ============================================================
 # [MIX] Заявки — GET / PUT / DELETE
+# ------------------------------------------------------------
+# Каркас от нейросети, вручную:
+#   - select всех новых полей (delay_*, all_rejected и т.д.);
+#   - освобождение инженера при cancelled/completed только
+#     если у него нет других активных заявок.
 # ============================================================
 @app.route('/api/requests', methods=['GET'])
 def get_requests():
@@ -1394,6 +1477,9 @@ def save_pilot_audio_text(request_id):
 
 # ============================================================
 # [MAN] Таблица «поломка → специализация»
+# ------------------------------------------------------------
+# Расширено вручную: двигатель, авионика, гидравлика,
+# электрика, механика, прочее.
 # ============================================================
 FAULT_SKILL = {
     'engine_failure':        'engine',
@@ -1437,6 +1523,12 @@ FAULT_SKILL = {
 
 # ============================================================
 # [MIX] Диспетчеризация — POST /api/dispatch
+# ------------------------------------------------------------
+# Каркас от нейросети, вручную:
+#   - жёсткая привязка по специализации (без fallback);
+#   - при отсутствии инженера заявка идёт в queued со
+#     стартом задержки и флагом all_rejected=1;
+#   - поддержка голосовых заявок от КВС.
 # ============================================================
 @app.route('/api/dispatch', methods=['POST'])
 def dispatch():
@@ -1592,6 +1684,9 @@ def dispatch():
 
 # ============================================================
 # [MAN] Отложенная перепроверка очереди
+# ------------------------------------------------------------
+# Написано вручную: если все специалисты заняты — через 10 сек
+# пытаемся снова разобрать очередь. Запускается из cancel/reject.
 # ============================================================
 def _schedule_recheck(request_id):
     def worker():
@@ -1614,6 +1709,13 @@ def _schedule_recheck(request_id):
 
 # ============================================================
 # [MIX] Отмена заявки инженером — POST /cancel
+# ------------------------------------------------------------
+# Каркас от нейросети, вручную:
+#   - удаление инженера из активной заявки;
+#   - при отказе — попытка назначить нового (клон с
+#     replaces_request_id);
+#   - если никого — queued + all_rejected + отложенная проверка;
+#   - старт задержки.
 # ============================================================
 @app.route('/api/requests/<request_id>/cancel', methods=['POST'])
 def cancel_request(request_id):
@@ -1822,6 +1924,10 @@ def cancel_request(request_id):
 
 # ============================================================
 # [MIX] Отказ инженера от заявки — POST /reject
+# ------------------------------------------------------------
+# Практически то же, что и /cancel, но без создания клона —
+# заявка остаётся одна и переходит в queued или назначается
+# на нового инженера. Флаг all_rejected — вручную.
 # ============================================================
 @app.route('/api/requests/<request_id>/reject', methods=['POST'])
 def reject_request(request_id):
@@ -1990,6 +2096,8 @@ def reject_request(request_id):
 
 # ============================================================
 # [MAN] Задержка рейса — POST /approve_delay
+# ------------------------------------------------------------
+# Диспетчер указывает минуты и причину. Ручной эндпоинт.
 # ============================================================
 @app.route('/api/requests/<request_id>/approve_delay', methods=['POST'])
 def approve_delay(request_id):
@@ -2029,6 +2137,11 @@ def approve_delay(request_id):
 
 # ============================================================
 # [MAN] Отмена рейса — заявка УДАЛЯЕТСЯ из БД
+# ------------------------------------------------------------
+# Ручной эндпоинт: диспетчер решает отменить рейс — заявка
+# удаляется полностью (а не помечается flight_cancelled).
+# Инженер освобождается, транспорт освобождается, потом
+# пытаемся разобрать очередь.
 # ============================================================
 @app.route('/api/requests/<request_id>/cancel_flight', methods=['POST'])
 def cancel_flight(request_id):
@@ -2090,6 +2203,9 @@ def cancel_flight(request_id):
 
 # ============================================================
 # [MIX] Освобождение инженера — POST /complete/<eng_id>
+# ------------------------------------------------------------
+# Вручную: не освобождаем, если у инженера есть активные
+# заявки (защита клона после переназначения).
 # ============================================================
 @app.route('/api/complete/<eng_id>', methods=['POST'])
 def complete_engineer(eng_id):
@@ -2143,6 +2259,9 @@ def clear_all_pilot_requests():
 
 # ============================================================
 # [AI] Аудио — стриминг с поддержкой Range
+# ------------------------------------------------------------
+# Каркас от нейросети, ручная доработка: обработка Range
+# для Web Audio API.
 # ============================================================
 def _decode_data_url(data_url):
     if not data_url:
@@ -2213,6 +2332,11 @@ def stream_pilot_audio(request_id):
 
 # ============================================================
 # [MIX] Whisper — распознавание голосовых заявок
+# ------------------------------------------------------------
+# Каркас от нейросети, вручную:
+#   - обёртка ffmpeg через PATH,
+#   - fallback на shutil.which,
+#   - парсинг текста (борт / терминал / стоянка / поломка).
 # ============================================================
 _whisper_model = None
 _whisper_available = None
@@ -2238,27 +2362,32 @@ def get_whisper():
 
 
 def _convert_to_wav(input_path):
-    ffmpeg_bin = None
-    if os.path.exists(FFMPEG_PATH):
-        ffmpeg_bin = FFMPEG_PATH
-    else:
-        found = shutil.which('ffmpeg') or shutil.which('ffmpeg.exe')
-        if found:
-            ffmpeg_bin = found
+    """Конвертирует любой аудиофайл в WAV 16kHz mono для Whisper."""
+    ffmpeg_bin = FFMPEG_PATH
+    if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+        # на всякий случай пробуем ещё раз найти
+        ffmpeg_bin = shutil.which('ffmpeg') or shutil.which('ffmpeg.exe')
     if not ffmpeg_bin:
+        print('[FFMPEG] Не найден — конвертация невозможна')
         return None
+
     out_path = input_path + '.wav'
     try:
         result = subprocess.run(
-            [ffmpeg_bin, '-y', '-i', input_path, '-ac', '1', '-ar', '16000',
-             '-f', 'wav', '-loglevel', 'error', out_path],
-            capture_output=True, timeout=120)
+            [ffmpeg_bin, '-y', '-i', input_path,
+             '-ac', '1', '-ar', '16000',
+             '-f', 'wav', '-loglevel', 'error',
+             out_path],
+            capture_output=True, timeout=120
+        )
         if result.returncode != 0:
+            print(f'[FFMPEG] Ошибка конвертации: {result.stderr.decode(errors="ignore")[:200]}')
             return None
         if not os.path.exists(out_path) or os.path.getsize(out_path) < 100:
             return None
         return out_path
-    except Exception:
+    except Exception as e:
+        print(f'[FFMPEG] Исключение: {e}')
         return None
 
 
@@ -2423,9 +2552,13 @@ def transcribe_pilot_audio(request_id):
 
 # ============================================================
 # [AI] Точка входа
+# ------------------------------------------------------------
+# На Render приложение запускается через gunicorn (см. Procfile
+# и render.yaml). Этот блок — для локального запуска.
 # ============================================================
 if __name__ == '__main__':
     init_db()
     if os.environ.get('WHISPER_WARMUP') == '1':
         get_whisper()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # [MAN] host=0.0.0.0, чтобы Render/ngrok могли проксировать
+    app.run(host='0.0.0.0', port=5000, debug=False)
